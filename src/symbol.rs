@@ -6,7 +6,7 @@ pub struct Symbol(pub i64);
 
 impl Symbol {
     pub fn new(symbol: &str) -> Self {
-
+        Self(0)
     }
 
 }

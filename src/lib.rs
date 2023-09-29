@@ -3,7 +3,7 @@ mod host;
 mod budget;
 mod db;
 mod error;
-mod stack;
+mod memory;
 mod symbol;
 
 use anyhow::Result;

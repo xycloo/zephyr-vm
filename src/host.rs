@@ -3,7 +3,7 @@ use wasmtime::{Val, Store, Func, Caller};
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 
-use crate::{budget::Budget, db::{shield::ShieldedStore, database::{Database, ZephyrDatabase, DatabasePermissions}, error::DatabaseError, self}, ZephyrStandard, ZephyrMock, stack::Stack, error::HostError};
+use crate::{budget::Budget, db::{shield::ShieldedStore, database::{Database, ZephyrDatabase, DatabasePermissions}, error::DatabaseError, self}, ZephyrStandard, ZephyrMock, memory::Stack, error::HostError};
 
 mod byte_utils {
     pub fn i64_to_bytes(value: i64) -> [u8; 8] {
