@@ -1,0 +1,20 @@
+[package]
+name = "zephyr"
+version = "0.0.1-rc1"
+edition = "2021"
+
+[dependencies]
+wasmtime = "13.0.0"
+anyhow = "1.0.75"
+thiserror = "1.0.48"
+sha2 = "0.10.7"
+
+[target.'cfg(feature="native")'.dependencies]
+postgres = {version="0.19.7", features=["with-serde_json-1"]}
+postgres-types = { version = "0.2.6", features = ["derive", "with-chrono-0_4", "with-time-0_3"] }
+
+
+[features]
+default = ["native"]
+host_only = []
+native = []
