@@ -3,8 +3,9 @@ mod host;
 mod budget;
 mod db;
 mod error;
-mod memory;
+mod vm_context;
 mod symbol;
+mod stack;
 
 use anyhow::Result;
 

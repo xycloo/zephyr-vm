@@ -8,6 +8,6 @@ pub enum HostError {
     #[error("Extern is not a function")]
     ExternNotAFunction,
 
-    #[error("No value on stack")]
-    NoValOnStack
+    #[error("Tried loading contex where context already exists")]
+    ContextAlreadyExists
 }

@@ -1,9 +1,9 @@
 use std::{rc::Rc, cell::{RefCell, RefMut, Ref}, borrow::BorrowMut};
-use wasmtime::{Val, Store, Func, Caller};
+use wasmtime::{Val, Store, Func, Caller, Memory, MemoryType};
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 
-use crate::{budget::Budget, db::{shield::ShieldedStore, database::{Database, ZephyrDatabase, DatabasePermissions}, error::DatabaseError, self}, ZephyrStandard, ZephyrMock, memory::Stack, error::HostError};
+use crate::{budget::Budget, db::{shield::ShieldedStore, database::{Database, ZephyrDatabase, DatabasePermissions}, error::DatabaseError, self}, ZephyrStandard, ZephyrMock, error::HostError, vm_context::{VmContext, Op}, vm::Vm, stack::Stack};
 
 mod byte_utils {
     pub fn i64_to_bytes(value: i64) -> [u8; 8] {
@@ -41,6 +41,7 @@ pub struct HostImpl<DB: ZephyrDatabase> {
     pub database: RefCell<Database<DB>>,
     pub budget: RefCell<Budget>,
     pub entry_point_info: RefCell<EntryPointInfo>,
+    pub context: RefCell<VmContext<DB>>,
     pub stack: RefCell<Stack>
 }
 
@@ -49,7 +50,8 @@ pub struct HostImpl<DB: ZephyrDatabase> {
 pub struct Host<DB: ZephyrDatabase>(Rc<HostImpl<DB>>); // We wrap [`HostImpl`] here inside an rc pointer for multi ownership.
 
 impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
-    fn host_from_id(id: i64) -> Result<Self> {
+    pub fn from_id(id: i64) -> Result<Self> {
+        
         Ok(Self(Rc::new(
             HostImpl {
                 id,
@@ -57,6 +59,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
                 database: RefCell::new(Database::zephyr_standard()?),
                 budget: RefCell::new(Budget::zephyr_standard()?),
                 entry_point_info: RefCell::new(EntryPointInfo::default()),
+                context: RefCell::new(VmContext::zephyr_standard()?),
                 stack: RefCell::new(Stack::zephyr_standard()?)
             })
         ))
@@ -72,6 +75,7 @@ impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Host<DB> {
                 database: RefCell::new(Database::mocked()?),
                 budget: RefCell::new(Budget::zephyr_standard()?),
                 entry_point_info: RefCell::new(EntryPointInfo::default()),
+                context: RefCell::new(VmContext::mocked()?),
                 stack: RefCell::new(Stack::zephyr_standard()?)
             })
         ))
@@ -86,14 +90,6 @@ pub struct FunctionInfo {
 }
 
 impl<DB: ZephyrDatabase> Host<DB> {
-    pub fn get_host_id(&self) -> i64 {
-        self.0.id
-    }
-    
-    pub fn get_entry_point_info(&self) -> Ref<EntryPointInfo> {
-        self.0.entry_point_info.borrow()
-    }
-
     pub fn as_budget(&self) -> Ref<Budget> {
         self.0.budget.borrow()
     }
@@ -102,55 +98,24 @@ impl<DB: ZephyrDatabase> Host<DB> {
         self.0.stack.borrow_mut()
     }
 
-    pub fn as_stack(&self) -> Ref<Stack> {
-        self.0.stack.borrow()
+    pub fn get_host_id(&self) -> i64 {
+        self.0.id
+    }
+    
+    pub fn get_entry_point_info(&self) -> Ref<EntryPointInfo> {
+        self.0.entry_point_info.borrow()
     }
 
-    fn read_database_raw(&self) -> Result<()> {
-        let db_obj = self.0.database.borrow();
-        let db_impl = db_obj.0.borrow();
-        
-        if let DatabasePermissions::WriteOnly = db_impl.permissions {
-            return Err(DatabaseError::ReadOnWriteOnly.into());
-        }
+    pub fn load_context(&self, vm: Rc<Vm<DB>>) -> Result<()> {
+        let mut vm_context = self.0.context.borrow_mut();
 
-        let stack = self.0.stack.borrow();
-        let stack = stack.0.load_host().borrow();
-
-        let id = {
-            let value = self.get_host_id();
-            byte_utils::i64_to_bytes(value)
-        };
-
-        let read_point_hash: [u8; 32] = {
-            let read_point_raw = stack.get(0).ok_or(HostError::NoValOnStack)?;
-            let read_point_bytes = byte_utils::i64_to_bytes(*read_point_raw);
-
-            let mut hasher = Sha256::new();
-            hasher.update(id);
-            hasher.update(read_point_bytes);
-            hasher.finalize().into()
-        };
-
-        {
-            let mut columns: Vec<> = Vec::new();
-        }
-
-        Ok(())
+        vm_context.load_vm(vm)
     }
 
-    fn stack_load(&self) -> Result<Vec<i64>> {
-        let stack = self.as_stack();
+    fn get_stack(&self) -> Result<Vec<i64>> {
+        let stack = self.as_stack_mut();
         
         Ok(stack.0.load())
-    }
-
-    fn stack_push(&self, val: i64) -> Result<()> {
-        let mut stack = self.as_stack_mut();
-        let stack_impl = stack.0.borrow_mut();
-        stack_impl.push(val);
-
-        Ok(())
     }
 
     fn stack_clear(&self) -> Result<()> {
@@ -161,37 +126,66 @@ impl<DB: ZephyrDatabase> Host<DB> {
         Ok(())
     }
 
-    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 2] {
+    fn read_database_raw(&self, store: &mut Store<Host<DB>>) -> Result<u8> {
+        let db_obj = self.0.database.borrow();
+        let db_impl = db_obj.0.borrow();
+        
+        if let DatabasePermissions::WriteOnly = db_impl.permissions {
+            return Err(DatabaseError::ReadOnWriteOnly.into());
+        }
+
+        let id = {
+            let value = self.get_host_id();
+            byte_utils::i64_to_bytes(value)
+        };
+
+        let read_point_hash: [u8; 32] = {
+//            let read_point_raw = stack.get(0).ok_or(HostError::NoValOnStack)?;
+//            let read_point_bytes = byte_utils::i64_to_bytes(*read_point_raw);
+
+            let mut hasher = Sha256::new();
+            hasher.update(id);
+            //hasher.update(read_point_bytes);
+            hasher.finalize().into()
+        };
+
+        {
+            // let mut columns: Vec<> = Vec::new();
+        }
+
+        {
+            let mut vm_opt = self.0.context.borrow_mut();
+            let vm = vm_opt.vm.as_mut().unwrap(); // todo make safe
+            let mut store = vm.store.borrow_mut();
+
+            let memory = Memory::new(&mut *store, MemoryType::new(0, None))?;
+            memory.write(&mut *store, 0, &[1, 2, 3, 4])?;
+            
+            Ok(memory.data_ptr(&mut *store) as u8)
+        }
+    }
+
+    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 1] {
         let mut store = store;
         
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 let host: &Host<DB> = caller.data();
 
-                host.read_database_raw()
+                if let Ok(ptr) = host.read_database_raw() {
+                    ptr as i32
+                } else {
+                    0
+                }
             });
 
             FunctionInfo {
-                module: "db",
+                module: "env",
                 func: "read_raw",
                 wrapped: db_read_fn_wrapped
             }
         };
 
-        let stack_push_fn = {
-            let stack_push_fn_wrapped = Func::wrap(&mut store, |caller: Caller<'_, Host<DB>>, val: i64| {
-                let host: &Host<DB> = caller.data();
-
-                host.stack_push(val)
-            });
-
-            FunctionInfo {
-                module: "stack",
-                func: "push",
-                wrapped: stack_push_fn_wrapped
-            }
-        };
-
-        [db_read_fn, stack_push_fn]
+        [db_read_fn]
     }
 }

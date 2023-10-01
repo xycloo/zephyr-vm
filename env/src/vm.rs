@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
-use wasmtime::{Module, Store, Engine, Linker, Instance};
+use wasmtime::{Module, Store, Engine, Linker, Instance, Memory};
 use anyhow::Result;
 
 use crate::{host::Host, error::HostError, db::database::ZephyrDatabase};
@@ -7,8 +7,8 @@ use crate::{host::Host, error::HostError, db::database::ZephyrDatabase};
 /// The Zephyr VM.
 pub struct Vm<DB: ZephyrDatabase> {
     module: Module,
-    store: RefCell<Store<Host<DB>>>,
-    instance: Instance
+    pub store: RefCell<Store<Host<DB>>>,
+    instance: Instance,
 }
 
 
@@ -42,12 +42,13 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         // We are not starting instance already. 
         let instance = linker.instantiate(&mut store, &module)?;
 
+
         Ok(
             Rc::new(
                 Self {
                     module,
                     store: RefCell::new(store),
-                    instance
+                    instance,
                 }
             )
         )
@@ -81,7 +82,10 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 
 #[cfg(test)]
 mod otf_test {
-    use crate::{host::Host, native::database::MercuryDatabase, ZephyrMock};
+    use std::rc::Rc;
+    use std::fs::read;
+
+    use crate::{host::{Host}, native::database::MercuryDatabase, ZephyrMock};
 
     use super::Vm;
 
@@ -94,6 +98,28 @@ mod otf_test {
         let start = std::time::Instant::now();
 
         let vm = Vm::new(&host, code).unwrap();
+        
+        host.load_context(Rc::clone(&vm)).unwrap();
+        
+        vm.metered_call(&host).unwrap();
+
+        println!("elapsed {:?}", start.elapsed());
+    }
+
+    #[test]
+    fn alloc_invocation() {
+        let code = {
+            read("./../target/wasm32-unknown-unknown/release/alloc.wasm").unwrap()
+        };
+
+        let host = Host::<MercuryDatabase>::mocked().unwrap();
+
+        let start = std::time::Instant::now();
+
+        let vm = Vm::new(&host, code.as_slice()).unwrap();
+        
+        host.load_context(Rc::clone(&vm)).unwrap();
+        
         vm.metered_call(&host).unwrap();
 
         println!("elapsed {:?}", start.elapsed());
@@ -108,6 +134,9 @@ mod otf_test {
         let start = std::time::Instant::now();
 
         let vm = Vm::new(&host, code).unwrap();
+        
+        host.load_context(Rc::clone(&vm)).unwrap();
+        
         vm.metered_call(&host).unwrap();
 
         println!("elapsed {:?}", start.elapsed());
