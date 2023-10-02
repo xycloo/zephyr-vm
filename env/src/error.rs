@@ -9,5 +9,8 @@ pub enum HostError {
     ExternNotAFunction,
 
     #[error("Tried loading contex where context already exists")]
-    ContextAlreadyExists
+    ContextAlreadyExists,
+
+    #[error("Zephyr cannot operate without memory export")]
+    NoMemoryExport
 }

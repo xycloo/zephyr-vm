@@ -41,7 +41,7 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         // NOTE
         // We are not starting instance already. 
         let instance = linker.instantiate(&mut store, &module)?;
-
+       
 
         Ok(
             Rc::new(
