@@ -1,12 +1,11 @@
 #![no_std]
 
 use core::{alloc::{GlobalAlloc, Layout}, panic::PanicInfo, slice};
-
 extern crate wee_alloc;
 
 extern "C" {
     #[link_name = "read_raw"]
-    fn read_raw() -> i32;
+    fn read_raw() -> ();
 
     #[link_name = "zephyr_logger"]
     fn log(param: i32);
@@ -27,16 +26,20 @@ pub extern "C" fn on_close() {
         read_raw()
     };
 
+    let x = 40;
 
-    let slice = unsafe {
-        let read = read as *const u8;
-        let slice = slice::from_raw_parts(read, 4);
+    unsafe {
+        // Define a reference to the linear memory.
+        let memory: *const u8 = 0 as *const u8;
 
-        let a = slice[0];
+        // Calculate the memory address at the specified offset.
+        let start = memory.offset(x as isize);
 
-        if a == 1 {
-            log(1 as i32);
-        }
-    };
+        // Check if the requested slice is within the bounds of the linear memory.
+        
+        let slice = slice::from_raw_parts(start, 4);
+
+        log(slice[2] as i32);
+    }
 }
 

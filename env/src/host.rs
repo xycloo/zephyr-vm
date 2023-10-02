@@ -126,7 +126,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok(())
     }
 
-    fn read_database_raw(mut caller: Caller<Self>) -> Result<i32> {
+    fn read_database_raw(mut caller: Caller<Self>) -> Result<()> {
         {
             let host = caller.data();
             let db_obj = host.0.database.borrow();
@@ -152,19 +152,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             };
         }
 
-        {
-            // let mut columns: Vec<> = Vec::new();
-        }
-
         {            
-            let memory = Memory::new(&mut caller, MemoryType::new(1024, None))?;
-            
-            memory.write(&mut caller, 100, &[1, 2, 3, 4]).unwrap();
-
-            let ptr = memory.data_ptr(&mut caller);
-
-            
-            Ok(ptr as i32)
+            let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+            memory.write(&mut caller, 40, &[1, 2, 3, 4]).unwrap();
+                        
+            Ok(())
         }
     }
 
@@ -174,9 +166,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |mut caller: Caller<_>| {
                 if let Ok(ptr) = Host::read_database_raw(caller) {
-                    ptr as i32
+                    ()
                 } else {
-                    0
+                    panic!()
                 }
             });
 

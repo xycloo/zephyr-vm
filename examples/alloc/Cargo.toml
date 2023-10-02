@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 wee_alloc = "0.4.5"
 
-
 [lib]
 crate-type = ["cdylib"]
 doctest = false
