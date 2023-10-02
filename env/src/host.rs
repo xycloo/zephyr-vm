@@ -127,7 +127,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     }
 
     fn read_database_raw(mut caller: Caller<Self>) -> Result<()> {
-        {
+        let memory = {
             let host = caller.data();
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
@@ -150,14 +150,17 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 //hasher.update(read_point_bytes);
                 hasher.finalize().into()
             };
-        }
-
-        {            
-            let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-            memory.write(&mut caller, 40, &[1, 2, 3, 4]).unwrap();
-                        
-            Ok(())
-        }
+        
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap(); // todo: make safe
+            
+            vm.memory
+        };
+        
+        memory.write(&mut caller, 40, &[1, 2, 3, 4]).unwrap();
+                    
+        Ok(())
+        
     }
 
     pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 2] {

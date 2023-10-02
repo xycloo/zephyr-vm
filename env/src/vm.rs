@@ -8,6 +8,7 @@ use crate::{host::Host, error::HostError, db::database::ZephyrDatabase};
 pub struct Vm<DB: ZephyrDatabase> {
     module: Module,
     pub store: RefCell<Store<Host<DB>>>,
+    pub memory: Memory,
     instance: Instance,
 }
 
@@ -41,13 +42,14 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         // NOTE
         // We are not starting instance already. 
         let instance = linker.instantiate(&mut store, &module)?;
-       
+        let memory = instance.get_export(&mut store, "memory").unwrap().into_memory().unwrap();
 
         Ok(
             Rc::new(
                 Self {
                     module,
                     store: RefCell::new(store),
+                    memory,
                     instance,
                 }
             )
