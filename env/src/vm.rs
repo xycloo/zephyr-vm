@@ -4,14 +4,28 @@ use anyhow::Result;
 
 use crate::{host::Host, error::HostError, db::database::ZephyrDatabase};
 
+#[derive(Clone)]
+pub struct MemoryManager {
+    pub memory: Memory,
+    pub offset: RefCell<usize>,
+}
+
+impl MemoryManager {
+    pub fn new(memory: Memory, offset: usize) -> Self {
+        Self { 
+            memory, 
+            offset: RefCell::new(offset) 
+        }
+    }
+}
+
 /// The Zephyr VM.
 pub struct Vm<DB: ZephyrDatabase> {
     module: Module,
     pub store: RefCell<Store<Host<DB>>>,
-    pub memory: Memory,
+    pub memory_manager: MemoryManager,
     instance: Instance,
 }
-
 
 impl<DB: ZephyrDatabase + Clone> Vm<DB> {
     pub fn new(host: &Host<DB>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
@@ -43,13 +57,14 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         // We are not starting instance already. 
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance.get_export(&mut store, "memory").unwrap().into_memory().unwrap();
+        let memory_manager = MemoryManager::new(memory, 0);
 
         Ok(
             Rc::new(
                 Self {
                     module,
                     store: RefCell::new(store),
-                    memory,
+                    memory_manager,
                     instance,
                 }
             )

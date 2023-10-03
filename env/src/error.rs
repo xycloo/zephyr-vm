@@ -12,5 +12,8 @@ pub enum HostError {
     ContextAlreadyExists,
 
     #[error("Zephyr cannot operate without memory export")]
-    NoMemoryExport
+    NoMemoryExport,
+
+    #[error("Tried reading stack at an index where no value is on it")]
+    NoValOnStack
 }

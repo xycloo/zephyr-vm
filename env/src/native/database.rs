@@ -50,11 +50,11 @@ impl ZephyrMock for MercuryDatabase {
 }
 
 impl ZephyrDatabase for MercuryDatabase {
-    fn read_raw(&self, user_id: i64, read_point_hash: [u8; 32], read_data: &[u8]) -> Result<(), DatabaseError> {
-        Ok(())
+    fn read_raw(&self, user_id: i64, read_point_hash: [u8; 32], read_data: &[i64]) -> Result<&[u8], DatabaseError> {
+        Ok(&[])
     }
 
-    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[u8]) -> Result<(), DatabaseError> {
+    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[i64]) -> Result<(), DatabaseError> {
         Ok(())
     }
 }

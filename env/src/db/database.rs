@@ -9,9 +9,9 @@ use super::error::DatabaseError;
 /// Implementations of Zephyr that allow from a database from within
 /// a Zephyr execution must implement this trait.
 pub trait ZephyrDatabase {
-    fn read_raw(&self, user_id: i64, read_point_hash: [u8; 32], read_data: &[u8]) -> Result<(), DatabaseError>;
+    fn read_raw(&self, user_id: i64, read_point_hash: [u8; 32], read_data: &[i64]) -> Result<&[u8], DatabaseError>;
     
-    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[u8]) -> Result<(), DatabaseError>;
+    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[i64]) -> Result<(), DatabaseError>;
 }
 
 #[derive(Clone)]
