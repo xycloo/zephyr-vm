@@ -4,7 +4,7 @@ use wasmtime::Store;
 
 use crate::{host::Host, db::database::ZephyrDatabase, ZephyrStandard};
 
-const STANDARD_FUEL: u64 = 10000;
+const STANDARD_FUEL: u64 = 1_000_000_000;
 
 #[derive(Clone)]
 pub struct DimensionLimits {

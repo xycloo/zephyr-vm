@@ -37,6 +37,7 @@ impl Default for EntryPointInfo {
 #[derive(Clone)]
 pub struct HostImpl<DB: ZephyrDatabase> {
     pub id: i64,
+    pub latest_close: RefCell<Option<&'static [u8]>>, // some zephyr programs might not need the ledger close meta
     pub shielded_store: RefCell<ShieldedStore>,
     pub database: RefCell<Database<DB>>,
     pub budget: RefCell<Budget>,
@@ -55,6 +56,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
         Ok(Self(Rc::new(
             HostImpl {
                 id,
+                latest_close: RefCell::new(None),
                 shielded_store: RefCell::new(ShieldedStore::default()), 
                 database: RefCell::new(Database::zephyr_standard()?),
                 budget: RefCell::new(Budget::zephyr_standard()?),
@@ -71,6 +73,7 @@ impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Host<DB> {
         Ok(Self(Rc::new(
             HostImpl {
                 id: 0,
+                latest_close: RefCell::new(None),
                 shielded_store: RefCell::new(ShieldedStore::default()), 
                 database: RefCell::new(Database::mocked()?),
                 budget: RefCell::new(Budget::zephyr_standard()?),
@@ -91,6 +94,17 @@ pub struct FunctionInfo {
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + Clone> Host<DB> {
+    pub fn add_ledger_close_meta(&mut self, ledger_close_meta: &'static [u8]) -> Result<()> {
+        let current = &self.0.latest_close;
+        if current.borrow().is_some() {
+            return Err(HostError::LedgerCloseMetaOverridden.into());
+        }
+        
+        *current.borrow_mut() = Some(ledger_close_meta);
+
+        Ok(())
+    }
+
     pub fn as_budget(&self) -> Ref<Budget> {
         self.0.budget.borrow()
     }
@@ -125,6 +139,38 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         stack_impl.clear();
 
         Ok(())
+    }
+
+    fn read_ledger_meta(mut caller: Caller<Self>) -> Result<(i64, i64)> {
+        let (memory, offset, data) = {
+            let host = caller.data();
+            let ledger_close_meta = {
+                let current = host.0.latest_close.borrow();
+
+                if current.is_none() {
+                    return Err(HostError::NoLedgerCloseMeta.into());
+                }
+
+                current.unwrap()
+            };
+            
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap(); // todo: make safe
+            
+            let manager = &vm.memory_manager;
+            let memory = manager.memory;
+
+            let mut offset_mut = manager.offset.borrow_mut();
+            let new_offset = offset_mut.checked_add(ledger_close_meta.len()).unwrap();
+
+            *offset_mut = new_offset;
+
+            (memory, new_offset, ledger_close_meta)
+        };
+
+        memory.write(&mut caller, offset, data)?;
+
+        Ok((offset as i64, data.len() as i64))
     }
 
     fn read_database_raw(mut caller: Caller<Self>) -> Result<(i64, i64)> {
@@ -187,11 +233,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             (manager.memory, new_offset, read.to_vec())
         };
         
-        memory.write(&mut caller, offset, &data).unwrap();
+        memory.write(&mut caller, offset, &data)?;
         Ok((offset as i64, data.len() as i64))
     }
 
-    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 3] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 4] {
         let mut store = store;
         
         let db_read_fn = {
@@ -211,9 +257,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         };
 
         let log_fn = {
-            let wrapped = Func::wrap(&mut store, |mut caller: Caller<_>, param: i64| {
+            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i64| {
                 println!("Logged: {}", param);
-                let memory = {
+/*                 let memory = {
                     let host: &Host<DB> = caller.data();
                 let context = host.0.context.borrow();
             let vm = context.vm.as_ref().unwrap(); // todo: make safe
@@ -224,7 +270,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
             let mut res = [0;64];
             let data = memory.read(&mut caller, 1048496, &mut res);
-            println!("{:?}", res);
+            println!("{:?}", res);*/
 
             });
 
@@ -248,6 +294,22 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             }
         };
 
-        [db_read_fn, log_fn, stack_push_fn]
+        let read_ledger_meta_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
+                if let Ok(res) = Host::read_ledger_meta(caller) {
+                    res
+                } else {
+                    panic!()
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_ledger_meta",
+                wrapped
+            }
+        };
+
+        [db_read_fn, log_fn, stack_push_fn, read_ledger_meta_fn]
     }
 }

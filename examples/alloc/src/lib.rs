@@ -1,11 +1,16 @@
-use core::{alloc::{GlobalAlloc, Layout}, panic::PanicInfo, slice};
-use stellar_xdr::{ReadXdr, WriteXdr, DEFAULT_XDR_RW_DEPTH_LIMIT, ScVal, next};
+use core::slice;
+use stellar_xdr::{ReadXdr, ScVal, WriteXdr, LedgerCloseMeta};
 
 extern crate wee_alloc;
 
 extern "C" {
+    #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_raw"]
     fn read_raw() -> (i64, i64);
+
+    #[allow(improper_ctypes)] // we alllow as we enabled multi-value
+    #[link_name = "read_ledger_meta"]
+    fn read_ledger_meta() -> (i64, i64);
 
     #[link_name = "zephyr_stack_push"]
     fn env_push_stack(param: i64);
@@ -17,15 +22,8 @@ extern "C" {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-/*
-#[cfg(target_family = "wasm")]
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    core::arch::wasm32::unreachable()
-}
-*/
-#[no_mangle]
-pub extern "C" fn on_close() {
+
+fn db_read_test() {
     unsafe {
         env_push_stack(12348);
         env_push_stack(1);
@@ -66,6 +64,34 @@ pub extern "C" fn on_close() {
         log(r.as_ptr() as i64);
     }
     
+}
+
+#[no_mangle]
+pub extern "C" fn on_close() {
+    let (offset, size) = unsafe {
+        read_ledger_meta()
+    };
+
+    let ledger_meta = {
+        let memory = 0 as *const u8;
+        let slice = unsafe {
+            let start = memory.offset(offset as isize);
+            slice::from_raw_parts(start, size as usize)      
+        };
+
+        LedgerCloseMeta::from_xdr(slice).unwrap()
+    };
+
+    let ledger_seq = match ledger_meta {
+        LedgerCloseMeta::V1(v1) => v1.ledger_header.header.ledger_seq,
+        LedgerCloseMeta::V0(v0) => v0.ledger_header.header.ledger_seq,
+        LedgerCloseMeta::V2(v2) => v2.ledger_header.header.ledger_seq,
+    };
+
+    unsafe {
+        log(ledger_seq as i64)
+    }
+
 }
 
 

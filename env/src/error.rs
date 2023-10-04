@@ -15,5 +15,11 @@ pub enum HostError {
     NoMemoryExport,
 
     #[error("Tried reading stack at an index where no value is on it")]
-    NoValOnStack
+    NoValOnStack,
+
+    #[error("Tried overwriting ledger close meta")]
+    LedgerCloseMetaOverridden,
+
+    #[error("Requested ledger close meta but it is none")]
+    NoLedgerCloseMeta
 }
