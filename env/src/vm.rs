@@ -57,6 +57,9 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         // We are not starting instance already. 
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance.get_export(&mut store, "memory").unwrap().into_memory().unwrap();
+        
+        println!("{:?}", memory.data_size(&mut store));
+        
         let memory_manager = MemoryManager::new(memory, 0);
 
         Ok(

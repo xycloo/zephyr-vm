@@ -211,8 +211,21 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         };
 
         let log_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
-                println!("Logged: {}", param)
+            let wrapped = Func::wrap(&mut store, |mut caller: Caller<_>, param: i64| {
+                println!("Logged: {}", param);
+                let memory = {
+                    let host: &Host<DB> = caller.data();
+                let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap(); // todo: make safe
+            
+            let manager = &vm.memory_manager;
+                manager.memory
+                };
+
+            let mut res = [0;64];
+            let data = memory.read(&mut caller, 1048496, &mut res);
+            println!("{:?}", res);
+
             });
 
             FunctionInfo {
