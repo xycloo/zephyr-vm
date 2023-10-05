@@ -11,7 +11,7 @@ use super::error::DatabaseError;
 pub trait ZephyrDatabase {
     fn read_raw(&self, user_id: i64, read_point_hash: [u8; 32], read_data: &[i64]) -> Result<&[u8], DatabaseError>;
     
-    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[i64]) -> Result<(), DatabaseError>;
+    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], write_data: &[i64], written: Vec<Vec<u8>>) -> Result<(), DatabaseError>;
 }
 
 #[derive(Clone)]

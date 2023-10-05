@@ -1,4 +1,4 @@
-use std::{rc::Rc, cell::{RefCell, RefMut, Ref}, borrow::BorrowMut};
+use std::{rc::Rc, cell::{RefCell, RefMut, Ref}, borrow::BorrowMut, task::Context};
 use wasmtime::{Val, Store, Func, Caller};
 use anyhow::Result;
 use sha2::{Digest, Sha256};
@@ -173,6 +173,106 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok((offset as i64, data.len() as i64))
     }
 
+    fn write_database_raw(mut caller: Caller<Self>) -> Result<()> {
+        let (memory, write_point_hash, columns, segments) = {
+            let host = caller.data();
+
+            let stack_obj = host.0.stack.borrow_mut();
+            let stack = stack_obj.0.0.borrow_mut();
+        
+
+            let id = {
+                let value = host.get_host_id();
+                byte_utils::i64_to_bytes(value)
+            };
+
+            // insert into point (columns...) values (from memory)
+
+            let write_point_hash: [u8; 32] = {
+                let point_raw = stack.get(0).ok_or(HostError::NoValOnStack)?;
+                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
+
+                let mut hasher = Sha256::new();
+                hasher.update(id);
+                hasher.update(point_bytes);
+                hasher.finalize().into()
+            };
+
+            let columns = {
+                let columns_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                let mut columns: Vec<i64> = Vec::new();
+
+                for idx in 2..columns_size_idx {
+                    columns.push(*stack.get(idx as usize).ok_or(HostError::NoValOnStack)?);
+                    
+                };
+
+                columns
+            };
+
+            let data_segments = {
+                let mut segments: Vec<(i64, i64)> = Vec::new();
+                let mut start = 2 + columns.len();
+
+                let data_segments_size_idx =  {
+                    let non_fixed = stack.get(start).ok_or(HostError::NoValOnStack)?;
+                    
+                    (*non_fixed * 2) as usize + start
+                };
+
+                println!("data segments size: {}", data_segments_size_idx);
+
+                start += 1;
+
+                for idx in (start..data_segments_size_idx).step_by(2) {
+                    let offset = *stack.get(idx as usize).ok_or(HostError::NoValOnStack)?;
+                    let size = *stack.get(idx + 1).ok_or(HostError::NoValOnStack)?;
+                    segments.push((offset, size))
+                }
+
+                segments
+            };
+
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap();
+            let mem_manager = &vm.memory_manager;
+
+            (mem_manager.memory, write_point_hash, columns, data_segments)
+        };
+
+        let aggregated_data = {
+            let mut aggregated = Vec::new();
+            
+            for segment in segments {
+                let data = {
+                    let mut written_vec = Vec::new();
+                    for _ in 0..segment.1 {
+                        written_vec.push(123) 
+                    }
+
+                    memory.read(&mut caller, segment.0 as usize, &mut written_vec)?;
+                    written_vec
+                };
+
+                aggregated.push(data);
+            }
+
+            aggregated
+        };
+
+        let host = caller.data();
+        let db_obj = host.0.database.borrow();
+        let db_impl = db_obj.0.borrow();
+
+        if let DatabasePermissions::ReadOnly = db_impl.permissions {
+            return Err(DatabaseError::WriteOnReadOnly.into());
+        }
+
+        db_impl.db.write_raw(host.get_host_id(), write_point_hash, &columns, aggregated_data)?;
+
+        Ok(())
+    }
+
     fn read_database_raw(mut caller: Caller<Self>) -> Result<(i64, i64)> {
         let (memory, offset, data) = {
             let host = caller.data();
@@ -201,10 +301,10 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             };
 
             let read_data = {
-                let data_size = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
                 let mut retrn = Vec::new();
 
-                for n in 2..data_size {
+                for n in 2..data_size_idx {
                     retrn.push(*stack.get(n as usize).ok_or(HostError::NoValOnStack)?);
                 }
 
@@ -237,9 +337,21 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok((offset as i64, data.len() as i64))
     }
 
-    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 4] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 5] {
         let mut store = store;
         
+        let db_write_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
+                Self::write_database_raw(caller)
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "write_raw",
+                wrapped
+            }
+        };
+
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 if let Ok(res) = Host::read_database_raw(caller) {
@@ -310,6 +422,6 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             }
         };
 
-        [db_read_fn, log_fn, stack_push_fn, read_ledger_meta_fn]
+        [db_write_fn, db_read_fn, log_fn, stack_push_fn, read_ledger_meta_fn]
     }
 }

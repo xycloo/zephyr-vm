@@ -54,7 +54,9 @@ impl ZephyrDatabase for MercuryDatabase {
         Ok(&[0, 0, 0, 15, 0, 0, 0, 7, 100, 101, 112, 111, 115, 105, 116, 0])
     }
 
-    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], written: &[i64]) -> Result<(), DatabaseError> {
+    fn write_raw(&self, user_id: i64, written_point_hash: [u8; 32], write_data: &[i64], written: Vec<Vec<u8>>) -> Result<(), DatabaseError> {
+        println!("{:?}", write_data);
+        println!("{:?}", written);
         Ok(())
     }
 }

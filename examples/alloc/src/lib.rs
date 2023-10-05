@@ -9,6 +9,11 @@ extern "C" {
     fn read_raw() -> (i64, i64);
 
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
+    #[link_name = "write_raw"]
+    fn write_raw();
+
+
+    #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_ledger_meta"]
     fn read_ledger_meta() -> (i64, i64);
 
@@ -66,8 +71,22 @@ fn db_read_test() {
     
 }
 
-#[no_mangle]
-pub extern "C" fn on_close() {
+fn db_write_test() {
+    let c1_value = [2, 3, 5, 6, 7, 2, 3, 4];
+    
+    unsafe {
+        env_push_stack(12348);
+        env_push_stack(1);
+        env_push_stack(123181);
+        env_push_stack(1);
+        env_push_stack(c1_value.as_ptr() as i64);
+        env_push_stack(c1_value.len() as i64);
+    };
+
+    unsafe {write_raw()}
+}
+
+fn get_ledger_meta_test() {
     let (offset, size) = unsafe {
         read_ledger_meta()
     };
@@ -91,7 +110,11 @@ pub extern "C" fn on_close() {
     unsafe {
         log(ledger_seq as i64)
     }
+}
 
+#[no_mangle]
+pub extern "C" fn on_close() {
+    db_write_test();
 }
 
 

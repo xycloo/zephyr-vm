@@ -5,16 +5,19 @@ use wasmtime::Store;
 use crate::{host::Host, db::database::ZephyrDatabase, ZephyrStandard};
 
 const STANDARD_FUEL: u64 = 1_000_000_000;
+const STANDARD_WRITE_MAX: usize = 64_000;
 
 #[derive(Clone)]
 pub struct DimensionLimits {
-    fuel: u64
+    fuel: u64,
+    write_max: usize
 }
 
 impl ZephyrStandard for DimensionLimits {
     fn zephyr_standard() -> Result<Self> {
         Ok(Self { 
-            fuel: STANDARD_FUEL
+            fuel: STANDARD_FUEL,
+            write_max: STANDARD_WRITE_MAX
         })
     }
 }
