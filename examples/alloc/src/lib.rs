@@ -67,7 +67,7 @@ fn db_read_test() {
 }
 
 fn db_write_test() {
-    let c1_value = [2, 3, 5, 6, 7, 2, 3, 4];
+    let c1_value: [u8; 8] = [2, 0, 5, 6, 7, 2, 3, 4];
 
     unsafe {
         env_push_stack(12348);

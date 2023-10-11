@@ -326,7 +326,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 let data = {
                     let mut written_vec = Vec::new();
                     for _ in 0..segment.1 {
-                        written_vec.push(123)
+                        written_vec.push(0)
                     }
 
                     memory.read(&mut caller, segment.0 as usize, &mut written_vec)?;
