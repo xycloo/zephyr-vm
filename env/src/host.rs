@@ -1,9 +1,30 @@
-use std::{rc::Rc, cell::{RefCell, RefMut, Ref}, borrow::BorrowMut, task::Context};
-use wasmtime::{Val, Store, Func, Caller};
+//! Structures and implementations for the Zephyr
+//! host environment. This module defines all the interactions
+//! between the binary code executed within the VM and
+//! the implementor.
+
 use anyhow::Result;
 use sha2::{Digest, Sha256};
+use std::{
+    borrow::BorrowMut,
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
+};
+use wasmtime::{Caller, Func, Store, Val};
 
-use crate::{budget::Budget, db::{shield::ShieldedStore, database::{Database, ZephyrDatabase, DatabasePermissions}, error::DatabaseError}, ZephyrStandard, ZephyrMock, error::HostError, vm_context::VmContext, vm::Vm, stack::Stack};
+use crate::{
+    budget::Budget,
+    db::{
+        database::{Database, DatabasePermissions, ZephyrDatabase},
+        error::DatabaseError,
+        shield::ShieldedStore,
+    },
+    error::HostError,
+    stack::Stack,
+    vm::Vm,
+    vm_context::VmContext,
+    ZephyrMock, ZephyrStandard,
+};
 
 mod byte_utils {
     pub fn i64_to_bytes(value: i64) -> [u8; 8] {
@@ -20,29 +41,62 @@ mod byte_utils {
     }
 }
 
+/// Information about the entry point function. This
+/// function is exported by the binary with the given
+/// argument types.
 #[derive(Clone)]
 pub struct EntryPointInfo {
+    /// Name of the function.
     pub fname: String,
+
+    /// Function parameter types.
     pub params: Vec<Val>,
-    pub retrn: Vec<Val>
+
+    /// Function return types.
+    pub retrn: Vec<Val>,
 }
 
-impl Default for EntryPointInfo {
-    fn default() -> Self {
-        Self { fname: "on_close".to_string(), params: [].into(), retrn: [].into() }
+/// By default, Zephyr infers a standard entry point:
+/// the `on_close() -> ()` function.
+impl ZephyrStandard for EntryPointInfo {
+    fn zephyr_standard() -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            fname: "on_close".to_string(),
+            params: [].into(),
+            retrn: [].into(),
+        })
     }
 }
 
 /// Zephyr Host State Implementation.
 #[derive(Clone)]
 pub struct HostImpl<DB: ZephyrDatabase> {
+    /// Host id.
     pub id: i64,
+
+    /// Latest ledger close meta. This is set as optional as
+    /// some Zephyr programs might not need the ledger meta.
     pub latest_close: RefCell<Option<&'static [u8]>>, // some zephyr programs might not need the ledger close meta
+
+    /// Implementation of the Shielded Store.
     pub shielded_store: RefCell<ShieldedStore>,
+
+    /// Database implementation.
     pub database: RefCell<Database<DB>>,
+
+    /// Budget implementation.
     pub budget: RefCell<Budget>,
+
+    /// Entry point info.
     pub entry_point_info: RefCell<EntryPointInfo>,
+
+    /// VM context.
     pub context: RefCell<VmContext<DB>>,
+
+    /// Host pseudo stack implementation.
     pub stack: RefCell<Stack>,
 }
 
@@ -52,75 +106,99 @@ pub struct Host<DB: ZephyrDatabase>(Rc<HostImpl<DB>>); // We wrap [`HostImpl`] h
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
+    /// Creates a standard Host object starting from a given
+    /// host ID. The host ID is the only relation between the VM
+    /// and the entity it is bound to. For instance, in Mercury
+    /// the host id is the id of a Mercury user. This is needed to
+    /// implement role constraints in Zephyr.
     pub fn from_id(id: i64) -> Result<Self> {
-        Ok(Self(Rc::new(
-            HostImpl {
-                id,
-                latest_close: RefCell::new(None),
-                shielded_store: RefCell::new(ShieldedStore::default()), 
-                database: RefCell::new(Database::zephyr_standard()?),
-                budget: RefCell::new(Budget::zephyr_standard()?),
-                entry_point_info: RefCell::new(EntryPointInfo::default()),
-                context: RefCell::new(VmContext::zephyr_standard()?),
-                stack: RefCell::new(Stack::zephyr_standard()?)
-            })
-        ))
+        Ok(Self(Rc::new(HostImpl {
+            id,
+            latest_close: RefCell::new(None),
+            shielded_store: RefCell::new(ShieldedStore::default()),
+            database: RefCell::new(Database::zephyr_standard()?),
+            budget: RefCell::new(Budget::zephyr_standard()?),
+            entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
+            context: RefCell::new(VmContext::zephyr_standard()?),
+            stack: RefCell::new(Stack::zephyr_standard()?),
+        })))
     }
 }
 
 impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Host<DB> {
+    /// Creates a Host object designed to be used in tests with potentially
+    /// mocked data such as host id, databases and context.
     fn mocked() -> Result<Self> {
-        Ok(Self(Rc::new(
-            HostImpl {
-                id: 0,
-                latest_close: RefCell::new(None),
-                shielded_store: RefCell::new(ShieldedStore::default()), 
-                database: RefCell::new(Database::mocked()?),
-                budget: RefCell::new(Budget::zephyr_standard()?),
-                entry_point_info: RefCell::new(EntryPointInfo::default()),
-                context: RefCell::new(VmContext::mocked()?),
-                stack: RefCell::new(Stack::zephyr_standard()?)
-            })
-        ))
+        Ok(Self(Rc::new(HostImpl {
+            id: 0,
+            latest_close: RefCell::new(None),
+            shielded_store: RefCell::new(ShieldedStore::default()),
+            database: RefCell::new(Database::mocked()?),
+            budget: RefCell::new(Budget::zephyr_standard()?),
+            entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
+            context: RefCell::new(VmContext::mocked()?),
+            stack: RefCell::new(Stack::zephyr_standard()?),
+        })))
     }
 }
 
+/// Wrapper function information.
+/// This object is sent to the VM object when the Virtual Machine
+/// is created to tell the linker which host functions to define.
 #[derive(Clone)]
 pub struct FunctionInfo {
+    /// Module name.
     pub module: &'static str,
+
+    /// Function name.
     pub func: &'static str,
-    pub wrapped: Func
+
+    /// Func object. Contains the function's implementation.
+    pub wrapped: Func,
 }
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + Clone> Host<DB> {
+    /// Loads the ledger close meta bytes of the ledger the Zephyr VM will have
+    /// access to.
+    ///
+    /// The ledger close meta is stored as a slice and currenty no type checks occur.
+    /// The functions returns a [`HostError::LedgerCloseMetaOverridden`] error when a ledger
+    /// close meta is already present in the host object. This is because VMs are not re-usable
+    /// between ledgers and need to be created and instantiated for each new invocation to
+    /// prevent memory issues.
     pub fn add_ledger_close_meta(&mut self, ledger_close_meta: &'static [u8]) -> Result<()> {
         let current = &self.0.latest_close;
         if current.borrow().is_some() {
             return Err(HostError::LedgerCloseMetaOverridden.into());
         }
-        
+
         *current.borrow_mut() = Some(ledger_close_meta);
 
         Ok(())
     }
 
+    /// Returns a reference to the host's budget implementation.
     pub fn as_budget(&self) -> Ref<Budget> {
         self.0.budget.borrow()
     }
 
+    /// Returns a reference to the host's stack implementation.
     pub fn as_stack_mut(&self) -> RefMut<Stack> {
         self.0.stack.borrow_mut()
     }
 
+    /// Returns the id assigned to the host.
     pub fn get_host_id(&self) -> i64 {
         self.0.id
     }
-    
+
+    /// Returns a reference to the host's entry point information.
     pub fn get_entry_point_info(&self) -> Ref<EntryPointInfo> {
         self.0.entry_point_info.borrow()
     }
 
+    /// Loads VM context in the host if needed.
     pub fn load_context(&self, vm: Rc<Vm<DB>>) -> Result<()> {
         let mut vm_context = self.0.context.borrow_mut();
 
@@ -129,7 +207,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
     fn get_stack(&self) -> Result<Vec<i64>> {
         let stack = self.as_stack_mut();
-        
+
         Ok(stack.0.load())
     }
 
@@ -153,10 +231,10 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
                 current.unwrap()
             };
-            
+
             let context = host.0.context.borrow();
             let vm = context.vm.as_ref().unwrap(); // todo: make safe
-            
+
             let manager = &vm.memory_manager;
             let memory = manager.memory;
 
@@ -178,8 +256,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let host = caller.data();
 
             let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0.0.borrow_mut();
-        
+            let stack = stack_obj.0 .0.borrow_mut();
 
             let id = {
                 let value = host.get_host_id();
@@ -204,8 +281,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
                 for idx in 2..columns_size_idx {
                     columns.push(*stack.get(idx as usize).ok_or(HostError::NoValOnStack)?);
-                    
-                };
+                }
 
                 columns
             };
@@ -214,9 +290,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 let mut segments: Vec<(i64, i64)> = Vec::new();
                 let mut start = 2 + columns.len();
 
-                let data_segments_size_idx =  {
+                let data_segments_size_idx = {
                     let non_fixed = stack.get(start).ok_or(HostError::NoValOnStack)?;
-                    
+
                     (*non_fixed * 2) as usize + start
                 };
 
@@ -237,20 +313,24 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let vm = context.vm.as_ref().unwrap();
             let mem_manager = &vm.memory_manager;
 
+            drop(stack);
+            stack_obj.0.clear();
+
             (mem_manager.memory, write_point_hash, columns, data_segments)
         };
 
         let aggregated_data = {
             let mut aggregated = Vec::new();
-            
+
             for segment in segments {
                 let data = {
                     let mut written_vec = Vec::new();
                     for _ in 0..segment.1 {
-                        written_vec.push(123) 
+                        written_vec.push(123)
                     }
 
                     memory.read(&mut caller, segment.0 as usize, &mut written_vec)?;
+
                     written_vec
                 };
 
@@ -268,7 +348,12 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             return Err(DatabaseError::WriteOnReadOnly.into());
         }
 
-        db_impl.db.write_raw(host.get_host_id(), write_point_hash, &columns, aggregated_data)?;
+        db_impl.db.write_raw(
+            host.get_host_id(),
+            write_point_hash,
+            &columns,
+            aggregated_data,
+        )?;
 
         Ok(())
     }
@@ -279,8 +364,8 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
             let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0.0.borrow_mut();
-            
+            let stack = stack_obj.0 .0.borrow_mut();
+
             if let DatabasePermissions::WriteOnly = db_impl.permissions {
                 return Err(DatabaseError::ReadOnWriteOnly.into());
             }
@@ -312,15 +397,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             };
 
             let user_id = host.get_host_id();
-            let read = db_impl.db.read_raw(
-                user_id, 
-                read_point_hash, 
-                &read_data
-            )?;
-        
+            let read = db_impl.db.read_raw(user_id, read_point_hash, &read_data)?;
+
             let context = host.0.context.borrow();
             let vm = context.vm.as_ref().unwrap(); // todo: make safe
-            
+
             let manager = &vm.memory_manager;
             let mut offset_mut = manager.offset.borrow_mut();
             let new_offset = offset_mut.checked_add(read.len()).unwrap();
@@ -332,14 +413,34 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
             (manager.memory, new_offset, read.to_vec())
         };
-        
+
         memory.write(&mut caller, offset, &data)?;
         Ok((offset as i64, data.len() as i64))
     }
 
+    /// Returns all the host functions that must be defined in the linker.
+    /// This should be the only public function related to foreign functions
+    /// provided by the VM, the specific host functions should remain private.
+    ///
+    /// ### Current host functions
+    ///
+    /// The functions are currently:
+    ///  - Database write: retrieves instructions and data to be written specified
+    /// by the module and calls the [`DB::write_raw()`] function. Writing to the database
+    /// is streamlined to the [`DB`] implementation.
+    /// - Database read: retrieves instructions for the data to be read by the module
+    /// and calls the [`DB::read_raw()`] function. Reading from the database is streamlined
+    /// to the [`DB`] implementation.
+    /// - Log function: takes an integer from the module and logs it in the host.
+    /// - Stack push function: pushes an integer from the module to the host's pseudo
+    /// stack. This is currently the means of communication for unbound intructions between
+    /// the guest and the host environment.
+    /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
+    /// writes it to the module's memory. Returns the offset and the size of the bytes
+    /// written in the binary's memory.
     pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 5] {
         let mut store = store;
-        
+
         let db_write_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 Self::write_database_raw(caller)
@@ -348,7 +449,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             FunctionInfo {
                 module: "env",
                 func: "write_raw",
-                wrapped
+                wrapped,
             }
         };
 
@@ -364,32 +465,31 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             FunctionInfo {
                 module: "env",
                 func: "read_raw",
-                wrapped: db_read_fn_wrapped
+                wrapped: db_read_fn_wrapped,
             }
         };
 
         let log_fn = {
             let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i64| {
                 println!("Logged: {}", param);
-/*                 let memory = {
-                    let host: &Host<DB> = caller.data();
-                let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap(); // todo: make safe
-            
-            let manager = &vm.memory_manager;
-                manager.memory
-                };
+                /*                 let memory = {
+                        let host: &Host<DB> = caller.data();
+                    let context = host.0.context.borrow();
+                let vm = context.vm.as_ref().unwrap(); // todo: make safe
 
-            let mut res = [0;64];
-            let data = memory.read(&mut caller, 1048496, &mut res);
-            println!("{:?}", res);*/
+                let manager = &vm.memory_manager;
+                    manager.memory
+                    };
 
+                let mut res = [0;64];
+                let data = memory.read(&mut caller, 1048496, &mut res);
+                println!("{:?}", res);*/
             });
 
             FunctionInfo {
                 module: "env",
                 func: "zephyr_logger",
-                wrapped
+                wrapped,
             }
         };
 
@@ -402,7 +502,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             FunctionInfo {
                 module: "env",
                 func: "zephyr_stack_push",
-                wrapped
+                wrapped,
             }
         };
 
@@ -418,10 +518,16 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             FunctionInfo {
                 module: "env",
                 func: "read_ledger_meta",
-                wrapped
+                wrapped,
             }
         };
 
-        [db_write_fn, db_read_fn, log_fn, stack_push_fn, read_ledger_meta_fn]
+        [
+            db_write_fn,
+            db_read_fn,
+            log_fn,
+            stack_push_fn,
+            read_ledger_meta_fn,
+        ]
     }
 }

@@ -1,22 +1,45 @@
-mod vm;
-mod host;
-mod budget;
-mod db;
-mod error;
-mod vm_context;
-mod symbol;
-mod stack;
+#![warn(missing_docs)]
+
+//! ## The Zephyr VM host environment.
+//!
+//! Implementation of the Zephyr VM, the core of Mercury's code execution environment.
+//! Even if Zephyr is built to be used in Mercury, it is implementation-agnostic
+//! and can be integrated in any kind of implementation.
+
+pub mod budget;
+pub mod db;
+pub mod host;
+pub mod vm;
+
+#[allow(missing_docs)]
+pub mod error;
+
+pub mod stack;
+pub mod symbol;
+pub mod vm_context;
 
 use anyhow::Result;
 
-#[cfg(feature="native")]
+#[cfg(feature = "native")]
 mod native;
 
+/// Standard object for Zephyr. This trait must be implemented for all
+/// components that are encompassed by the Zephyr VM, specifically
+/// the database implementation.
 pub trait ZephyrStandard {
-    fn zephyr_standard() -> Result<Self> where Self: Sized;
+    /// Returns the standard zephyr object.
+    fn zephyr_standard() -> Result<Self>
+    where
+        Self: Sized;
 }
 
 // TODO: make mocks testutils only.
+/// Standard mocked Zephyr object. This trait must be implemented for all
+/// components that are encompassed by the Zephyr VM that required mocks
+/// for testing.
 pub trait ZephyrMock {
-    fn mocked() -> Result<Self> where Self:Sized;
+    /// Returns the mocked object.
+    fn mocked() -> Result<Self>
+    where
+        Self: Sized;
 }

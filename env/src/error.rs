@@ -21,5 +21,5 @@ pub enum HostError {
     LedgerCloseMetaOverridden,
 
     #[error("Requested ledger close meta but it is none")]
-    NoLedgerCloseMeta
+    NoLedgerCloseMeta,
 }
