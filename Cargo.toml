@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "env", 
-    "examples/alloc",
+    "rs-zephyr-env", 
     "rs-zephyr-sdk",
+    "examples/alloc",
     "examples/simple"
 ]

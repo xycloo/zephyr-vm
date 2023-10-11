@@ -49,6 +49,6 @@ impl Symbol {
             };
             accum |= v;
         }
-        Ok(unsafe { Self::from_body(accum) })
+        Ok(Self::from_body(accum))
     }
 }
