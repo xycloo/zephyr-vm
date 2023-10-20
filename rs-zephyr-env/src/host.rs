@@ -4,7 +4,7 @@
 //! the implementor.
 
 use anyhow::Result;
-use sha2::{Digest, Sha256};
+//use sha2::{Digest, Sha256};
 use std::{
     borrow::BorrowMut,
     cell::{Ref, RefCell, RefMut},
@@ -79,7 +79,7 @@ pub struct HostImpl<DB: ZephyrDatabase> {
 
     /// Latest ledger close meta. This is set as optional as
     /// some Zephyr programs might not need the ledger meta.
-    pub latest_close: RefCell<Option<&'static [u8]>>, // some zephyr programs might not need the ledger close meta
+    pub latest_close: RefCell<Option<Vec<u8>>>, // some zephyr programs might not need the ledger close meta
 
     /// Implementation of the Shielded Store.
     pub shielded_store: RefCell<ShieldedStore>,
@@ -167,7 +167,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     /// close meta is already present in the host object. This is because VMs are not re-usable
     /// between ledgers and need to be created and instantiated for each new invocation to
     /// prevent memory issues.
-    pub fn add_ledger_close_meta(&mut self, ledger_close_meta: &'static [u8]) -> Result<()> {
+    pub fn add_ledger_close_meta(&mut self, ledger_close_meta: Vec<u8>) -> Result<()> {
         let current = &self.0.latest_close;
         if current.borrow().is_some() {
             return Err(HostError::LedgerCloseMetaOverridden.into());
@@ -229,7 +229,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                     return Err(HostError::NoLedgerCloseMeta.into());
                 }
 
-                current.unwrap()
+                current.clone().unwrap()
             };
 
             let context = host.0.context.borrow();
@@ -246,7 +246,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             (memory, new_offset, ledger_close_meta)
         };
 
-        memory.write(&mut caller, offset, data)?;
+        memory.write(&mut caller, offset, data.as_slice())?;
 
         Ok((offset as i64, data.len() as i64))
     }
@@ -265,14 +265,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
             // insert into point (columns...) values (from memory)
 
-            let write_point_hash: [u8; 32] = {
-                let point_raw = stack.get(0).ok_or(HostError::NoValOnStack)?;
+            let write_point_hash: [u8; 16] = {
+                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
                 let point_bytes = byte_utils::i64_to_bytes(*point_raw);
 
-                let mut hasher = Sha256::new();
-                hasher.update(id);
-                hasher.update(point_bytes);
-                hasher.finalize().into()
+                md5::compute([point_bytes, id].concat()).into()
             };
 
             let columns = {
@@ -375,14 +372,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 byte_utils::i64_to_bytes(value)
             };
 
-            let read_point_hash: [u8; 32] = {
-                let read_point_raw = stack.get(0).ok_or(HostError::NoValOnStack)?;
-                let read_point_bytes = byte_utils::i64_to_bytes(*read_point_raw);
+            let read_point_hash: [u8; 16] = {
+                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
+                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
 
-                let mut hasher = Sha256::new();
-                hasher.update(id);
-                hasher.update(read_point_bytes);
-                hasher.finalize().into()
+                md5::compute([point_bytes, id].concat()).into()
             };
 
             let read_data = {

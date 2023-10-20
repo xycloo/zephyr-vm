@@ -26,7 +26,7 @@ pub trait ZephyrDatabase {
     fn read_raw(
         &self,
         user_id: i64,
-        read_point_hash: [u8; 32],
+        read_point_hash: [u8; 16],
         read_data: &[i64],
     ) -> Result<Vec<u8>, DatabaseError>;
 
@@ -43,7 +43,7 @@ pub trait ZephyrDatabase {
     fn write_raw(
         &self,
         user_id: i64,
-        written_point_hash: [u8; 32],
+        written_point_hash: [u8; 16],
         write_data: &[i64],
         written: Vec<Vec<u8>>,
     ) -> Result<(), DatabaseError>;

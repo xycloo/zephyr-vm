@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 wee_alloc = "0.4.5"
 stellar-xdr = { version = "20.0.0-rc1", default-features = false, features=["next", "serde", "base64"] }
+stellar-strkey = "0.0.7"
 
 [lib]
 crate-type = ["cdylib"]

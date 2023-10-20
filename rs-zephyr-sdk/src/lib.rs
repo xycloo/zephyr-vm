@@ -2,8 +2,12 @@ mod symbol;
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use stellar_xdr::{ReadXdr, LedgerEntryChange, LedgerEntry, TransactionMeta, LedgerCloseMeta, LedgerKey};
+use stellar_xdr::{
+    LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, ReadXdr, TransactionMeta,
+};
 use thiserror::Error;
+
+pub use stellar_xdr;
 
 fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
@@ -120,6 +124,8 @@ impl Database {
                 env_push_stack(segment.1);
             }
         }
+
+        unsafe { write_raw() }
     }
 }
 
@@ -158,6 +164,30 @@ pub struct EntryChanges {
     pub created: Vec<LedgerEntry>,
 }
 
+pub mod scval_utils {
+    use stellar_xdr::{ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
+
+    pub fn to_datakey_u32(int: u32) -> ScVal {
+        ScVal::U32(int)
+    }
+
+    pub fn to_datakey_symbol(variant_str: &str) -> ScVal {
+        let tot_s_val = ScVal::Symbol(ScSymbol(variant_str.to_string().try_into().unwrap()));
+
+        ScVal::Vec(Some(ScVec(VecM::try_from(vec![tot_s_val]).unwrap())))
+    }
+
+    pub fn instance_entries(val: &ScVal) -> Option<Vec<ScMapEntry>> {
+        if let ScVal::ContractInstance(instance) = val {
+            if let Some(map) = &instance.storage {
+                return Some(map.to_vec());
+            }
+        }
+
+        None
+    }
+}
+
 pub struct MetaReader<'a>(&'a stellar_xdr::LedgerCloseMeta);
 
 impl<'a> MetaReader<'a> {
@@ -165,12 +195,20 @@ impl<'a> MetaReader<'a> {
         Self(meta)
     }
 
+    pub fn ledger_sequence(&self) -> u32 {
+        match &self.0 {
+            LedgerCloseMeta::V1(v1) => v1.ledger_header.header.ledger_seq,
+            LedgerCloseMeta::V0(v0) => v0.ledger_header.header.ledger_seq,
+            LedgerCloseMeta::V2(v2) => v2.ledger_header.header.ledger_seq,
+        }
+    }
+
     pub fn v2_ledger_entries(&self) -> EntryChanges {
         let mut state_entries = Vec::new();
         let mut removed_entries = Vec::new();
         let mut updated_entries = Vec::new();
         let mut created_entries = Vec::new();
-        
+
         match &self.0 {
             LedgerCloseMeta::V0(_) => (),
             LedgerCloseMeta::V1(_) => (),
@@ -179,29 +217,37 @@ impl<'a> MetaReader<'a> {
                     match &tx_processing.tx_apply_processing {
                         TransactionMeta::V3(meta) => {
                             let ops = &meta.operations;
-    
+
                             for operation in ops.clone().into_vec() {
                                 for change in operation.changes.0.iter() {
                                     match &change {
-                                        LedgerEntryChange::State(state) => state_entries.push(state.clone()),
-                                        LedgerEntryChange::Created(created) => created_entries.push(created.clone()),
-                                        LedgerEntryChange::Updated(updated) => updated_entries.push(updated.clone()),
-                                        LedgerEntryChange::Removed(removed) => removed_entries.push(removed.clone()),
+                                        LedgerEntryChange::State(state) => {
+                                            state_entries.push(state.clone())
+                                        }
+                                        LedgerEntryChange::Created(created) => {
+                                            created_entries.push(created.clone())
+                                        }
+                                        LedgerEntryChange::Updated(updated) => {
+                                            updated_entries.push(updated.clone())
+                                        }
+                                        LedgerEntryChange::Removed(removed) => {
+                                            removed_entries.push(removed.clone())
+                                        }
                                     };
                                 }
-                                }
                             }
-                            _ => ()
                         }
+                        _ => (),
                     }
                 }
-            };
-        
-        EntryChanges { 
-            state: state_entries, 
-            removed: removed_entries, 
-            updated: updated_entries, 
-            created: created_entries 
+            }
+        };
+
+        EntryChanges {
+            state: state_entries,
+            removed: removed_entries,
+            updated: updated_entries,
+            created: created_entries,
         }
     }
 }

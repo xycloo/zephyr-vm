@@ -54,7 +54,7 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         config.consume_fuel(true);
 
         let engine = Engine::new(&config)?;
-        let module = Module::new(&engine, &wasm_module_code_bytes)?;
+        let module = Module::new(&engine, wasm_module_code_bytes)?;
 
         let mut store = Store::new(&engine, host.clone());
         host.as_budget().infer_fuel(&mut store)?;
@@ -172,7 +172,7 @@ mod otf_test {
 
     #[test]
     fn with_ledger_close_meta() {
-        let code = { read("./../target/wasm32-unknown-unknown/release/alloc.wasm").unwrap() };
+        let code = { read("./../target/wasm32-unknown-unknown/release/simple.wasm").unwrap() };
 
         let mut host = Host::<MercuryDatabase>::mocked().unwrap();
 
@@ -388,7 +388,8 @@ mod otf_test {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 121,
                 194, 145, 0, 0, 0, 0, 0, 0, 0, 0,
             ];
-            host.add_ledger_close_meta(ledger_close_meta).unwrap();
+            host.add_ledger_close_meta(ledger_close_meta.to_vec())
+                .unwrap();
         }
 
         let start = std::time::Instant::now();
