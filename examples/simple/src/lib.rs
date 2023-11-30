@@ -1,4 +1,4 @@
-use rs_zephyr_sdk::{Database, EntryChanges, EnvClient, MetaReader};
+use rs_zephyr_sdk::{EntryChanges, EnvClient};
 use stellar_xdr::{LedgerEntry, LedgerEntryData, ScSymbol, ScVal, ScVec, VecM};
 
 const XYCLOANS_CONTRACT: [u8; 32] = [
@@ -38,10 +38,10 @@ fn write_step(state_entry: LedgerEntry, idx: usize, step: &mut [Option<i128>; 2]
 
 #[no_mangle]
 pub extern "C" fn on_close() {
-    let meta = EnvClient::get_last_ledger_meta();
     let mut step: [Option<i128>; 2] = [None; 2];
 
-    let reader = MetaReader::new(&meta);
+    let mut env = EnvClient::default();
+    let reader = env.reader();
 
     let sequence = reader.ledger_sequence();
     let EntryChanges { state, updated, .. } = reader.v2_ledger_entries();
@@ -56,7 +56,7 @@ pub extern "C" fn on_close() {
 
     if let [Some(previous), Some(new)] = step {
         let delta: i128 = new - previous;
-        Database::write_table(
+        env.db_write(
             "liquidity",
             &["ledger", "delta"],
             &[&sequence.to_be_bytes(), delta.to_be_bytes().as_slice()],

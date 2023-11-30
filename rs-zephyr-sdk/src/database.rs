@@ -1,6 +1,5 @@
+use crate::{env_push_stack, read_raw, symbol, write_raw, SdkError, TypeWrap};
 use serde::{Deserialize, Serialize};
-use crate::{SdkError, symbol, TypeWrap, read_raw, write_raw, env_push_stack};
-
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct TableRows {
@@ -29,18 +28,15 @@ impl TableRows {
     }
 }
 
-
 #[derive(Clone, Default)]
 pub struct Database {}
 
-
-// Note: we're keeping methods 
 impl Database {
-    pub fn read_table(self, table_name: &str, columns: &[&str]) -> TableRows {
+    pub fn read_table(table_name: &str, columns: &[&str]) -> TableRows {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
-            .map(|col| (symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64).into())
+            .map(|col| symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64)
             .collect::<Vec<i64>>();
 
         unsafe {
@@ -57,11 +53,11 @@ impl Database {
         TableRows::from_raw_parts(offset, size as usize).unwrap()
     }
 
-    pub fn write_table(self, table_name: &str, columns: &[&str], segments: &[&[u8]]) {
+    pub fn write_table(table_name: &str, columns: &[&str], segments: &[&[u8]]) {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
-            .map(|col| (symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64).into())
+            .map(|col| symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64)
             .collect::<Vec<i64>>();
 
         let segments = segments
@@ -88,4 +84,3 @@ impl Database {
         unsafe { write_raw() }
     }
 }
-

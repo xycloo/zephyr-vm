@@ -257,6 +257,10 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok((offset as i64, data.len() as i64))
     }
 
+    // **Note**
+    // `write_database_raw` currently directly calls the database implementation
+    // to write the database. Once the shield store implementation is ready this will
+    // await for end of execution and handle + execute the transaction.
     fn write_database_raw(mut caller: Caller<Self>) -> Result<()> {
         let (memory, write_point_hash, columns, segments) = {
             let host = caller.data();

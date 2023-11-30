@@ -8,9 +8,9 @@ pub enum SymbolError {
         "Returned when attempting to form a Symbol from a string with more than 9 characters."
     )]
     TooLong(usize),
+
     /// Returned when attempting to form a [SymbolObject] or [SymbolSmall] from
     /// a string with characters outside the range `[a-zA-Z0-9_]`.
-
     #[error("Used bad characters")]
     BadChar(char),
 }

@@ -1,14 +1,15 @@
-mod symbol;
 mod database;
+mod ledger_meta;
+mod symbol;
 
+use database::{Database, TableRows};
+use ledger_meta::MetaReader;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use stellar_xdr::{
-    LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, ReadXdr, TransactionMeta,
-};
+use stellar_xdr::ReadXdr;
 use thiserror::Error;
-use database::Database;
 
+pub use ledger_meta::EntryChanges;
 pub use stellar_xdr;
 
 fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
@@ -41,50 +42,67 @@ extern "C" {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-
 #[derive(Clone, Debug, Error)]
 pub enum SdkError {
     #[error("Conversion error.")]
     Conversion,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+pub struct TypeWrap(pub Vec<u8>);
+
+impl TypeWrap {
+    pub fn to_i128(&self) -> i128 {
+        let bytes = to_fixed::<u8, 16>(self.0.clone());
+        i128::from_be_bytes(bytes)
+    }
+
+    pub fn to_u64(&self) -> u64 {
+        let bytes = to_fixed::<u8, 8>(self.0.clone());
+        u64::from_be_bytes(bytes)
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct EnvClient {
-    db: Database,
+    xdr: Option<stellar_xdr::LedgerCloseMeta>,
 }
 
+// Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
-    pub fn db(&self) -> &Database {
-        &self.db
-    }
-
     pub fn db_write(&self, table_name: &str, columns: &[&str], segments: &[&[u8]]) {
-        
+        Database::write_table(table_name, columns, segments)
     }
 
-    pub fn get_last_ledger_meta() -> stellar_xdr::LedgerCloseMeta {
-        let (offset, size) = unsafe { read_ledger_meta() };
+    pub fn db_read(&self, table_name: &str, columns: &[&str]) -> TableRows {
+        Database::read_table(table_name, columns)
+    }
 
-        let ledger_meta = {
-            let memory = 0 as *const u8;
-            let slice = unsafe {
-                let start = memory.offset(offset as isize);
-                core::slice::from_raw_parts(start, size as usize)
+    pub fn reader(&mut self) -> MetaReader {
+        let meta = Self::last_ledger_meta_xdr(self);
+
+        MetaReader::new(meta)
+    }
+
+    pub fn last_ledger_meta_xdr(&mut self) -> &stellar_xdr::LedgerCloseMeta {
+        if self.xdr.is_none() {
+            let (offset, size) = unsafe { read_ledger_meta() };
+
+            let ledger_meta = {
+                let memory = 0 as *const u8;
+                let slice = unsafe {
+                    let start = memory.offset(offset as isize);
+                    core::slice::from_raw_parts(start, size as usize)
+                };
+
+                stellar_xdr::LedgerCloseMeta::from_xdr(slice).unwrap()
             };
 
-            stellar_xdr::LedgerCloseMeta::from_xdr(slice).unwrap()
-        };
+            self.xdr = Some(ledger_meta);
+        }
 
-        ledger_meta
+        self.xdr.as_ref().unwrap()
     }
-}
-
-#[derive(Clone)]
-pub struct EntryChanges {
-    pub state: Vec<LedgerEntry>,
-    pub removed: Vec<LedgerKey>,
-    pub updated: Vec<LedgerEntry>,
-    pub created: Vec<LedgerEntry>,
 }
 
 pub mod scval_utils {
@@ -108,84 +126,5 @@ pub mod scval_utils {
         }
 
         None
-    }
-}
-
-pub struct MetaReader<'a>(&'a stellar_xdr::LedgerCloseMeta);
-
-impl<'a> MetaReader<'a> {
-    pub fn new(meta: &'a LedgerCloseMeta) -> Self {
-        Self(meta)
-    }
-
-    pub fn ledger_sequence(&self) -> u32 {
-        match &self.0 {
-            LedgerCloseMeta::V1(v1) => v1.ledger_header.header.ledger_seq,
-            LedgerCloseMeta::V0(v0) => v0.ledger_header.header.ledger_seq,
-            LedgerCloseMeta::V2(v2) => v2.ledger_header.header.ledger_seq,
-        }
-    }
-
-    pub fn v2_ledger_entries(&self) -> EntryChanges {
-        let mut state_entries = Vec::new();
-        let mut removed_entries = Vec::new();
-        let mut updated_entries = Vec::new();
-        let mut created_entries = Vec::new();
-
-        match &self.0 {
-            LedgerCloseMeta::V0(_) => (),
-            LedgerCloseMeta::V1(_) => (),
-            LedgerCloseMeta::V2(v2) => {
-                for tx_processing in v2.tx_processing.iter() {
-                    match &tx_processing.tx_apply_processing {
-                        TransactionMeta::V3(meta) => {
-                            let ops = &meta.operations;
-
-                            for operation in ops.clone().into_vec() {
-                                for change in operation.changes.0.iter() {
-                                    match &change {
-                                        LedgerEntryChange::State(state) => {
-                                            state_entries.push(state.clone())
-                                        }
-                                        LedgerEntryChange::Created(created) => {
-                                            created_entries.push(created.clone())
-                                        }
-                                        LedgerEntryChange::Updated(updated) => {
-                                            updated_entries.push(updated.clone())
-                                        }
-                                        LedgerEntryChange::Removed(removed) => {
-                                            removed_entries.push(removed.clone())
-                                        }
-                                    };
-                                }
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-        };
-
-        EntryChanges {
-            state: state_entries,
-            removed: removed_entries,
-            updated: updated_entries,
-            created: created_entries,
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub struct TypeWrap(pub Vec<u8>);
-
-impl TypeWrap {
-    pub fn to_i128(&self) -> i128 {
-        let bytes = to_fixed::<u8, 16>(self.0.clone());
-        i128::from_be_bytes(bytes)
-    }
-
-    pub fn to_u64(&self) -> u64 {
-        let bytes = to_fixed::<u8, 8>(self.0.clone());
-        u64::from_be_bytes(bytes)
     }
 }
