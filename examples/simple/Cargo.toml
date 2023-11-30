@@ -13,4 +13,3 @@ rs-zephyr-sdk = { path="../../rs-zephyr-sdk" }
 [lib]
 crate-type = ["cdylib"]
 doctest = false
-

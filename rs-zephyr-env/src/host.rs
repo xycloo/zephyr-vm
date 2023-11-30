@@ -219,18 +219,24 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok(())
     }
 
-    fn read_ledger_meta(mut caller: Caller<Self>) -> Result<(i64, i64)> {
+    fn read_ledger_meta(caller: Caller<Self>) -> Result<(i64, i64)> {
+        let host = caller.data();
+        let ledger_close_meta = {
+            let current = host.0.latest_close.borrow();
+
+            if current.is_none() {
+                return Err(HostError::NoLedgerCloseMeta.into());
+            }
+
+            current.clone().unwrap()
+        };
+
+        Self::write_to_memory(caller, ledger_close_meta.as_slice())
+    }
+
+    fn write_to_memory(mut caller: Caller<Self>, contents: &[u8]) -> Result<(i64, i64)> {
         let (memory, offset, data) = {
             let host = caller.data();
-            let ledger_close_meta = {
-                let current = host.0.latest_close.borrow();
-
-                if current.is_none() {
-                    return Err(HostError::NoLedgerCloseMeta.into());
-                }
-
-                current.clone().unwrap()
-            };
 
             let context = host.0.context.borrow();
             let vm = context.vm.as_ref().unwrap(); // todo: make safe
@@ -239,14 +245,14 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let memory = manager.memory;
 
             let mut offset_mut = manager.offset.borrow_mut();
-            let new_offset = offset_mut.checked_add(ledger_close_meta.len()).unwrap();
+            let new_offset = offset_mut.checked_add(contents.len()).unwrap();
 
             *offset_mut = new_offset;
 
-            (memory, new_offset, ledger_close_meta)
+            (memory, new_offset, contents)
         };
 
-        memory.write(&mut caller, offset, data.as_slice())?;
+        memory.write(&mut caller, offset, data)?;
 
         Ok((offset as i64, data.len() as i64))
     }
@@ -466,18 +472,6 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         let log_fn = {
             let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i64| {
                 println!("Logged: {}", param);
-                /*                 let memory = {
-                        let host: &Host<DB> = caller.data();
-                    let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap(); // todo: make safe
-
-                let manager = &vm.memory_manager;
-                    manager.memory
-                    };
-
-                let mut res = [0;64];
-                let data = memory.read(&mut caller, 1048496, &mut res);
-                println!("{:?}", res);*/
             });
 
             FunctionInfo {
