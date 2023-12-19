@@ -13,8 +13,9 @@ postgres-types = { version = "0.2.6", features = ["derive", "with-chrono-0_4", "
 bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.7.0"
+rs-zephyr-common = {path="../rs-zephyr-common"}
 
 [features]
-default = ["native"]
+default = ["testutils"]
 host_only = []
-native = ["dep:postgres", "dep:postgres-types"]
+testutils = ["dep:postgres", "dep:postgres-types"]

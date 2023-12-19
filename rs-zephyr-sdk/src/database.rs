@@ -1,4 +1,4 @@
-use crate::{env_push_stack, read_raw, symbol, write_raw, SdkError, TypeWrap, log};
+use crate::{env_push_stack, read_raw, symbol, write_raw, TypeWrap, SdkError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -11,42 +11,19 @@ pub struct TableRow {
     pub row: Vec<TypeWrap>,
 }
 
-impl TableRows {
-    pub fn from_raw_parts(offset: i64, size: usize) -> Result<Self, SdkError> {
-        let memory: *const u8 = 0 as *const u8;
-
-        unsafe {
-            log(offset)
-        }
-
-        let slice = unsafe {
-            let start = memory.offset(offset as isize);
-            core::slice::from_raw_parts(start, size as usize)
-        };
-
-        unsafe {
-            log(slice[0] as i64);
-            log(slice[slice.len()-1] as i64)
-        }
-        if let Ok(table) = bincode::deserialize::<Self>(slice) {
-            Ok(table)
-        } else {
-            Err(SdkError::Conversion)
-        }
-    }
-}
-
 #[derive(Clone, Default)]
 pub struct Database {}
 
 impl Database {
-    pub fn read_table(table_name: &str, columns: &[&str]) -> TableRows {
+    pub fn read_table(table_name: &str, columns: &[&str]) -> Result<TableRows, SdkError> {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
             .map(|col| symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64)
             .collect::<Vec<i64>>();
 
+        
+        // Load instructions to env pseudo-store.
         unsafe {
             env_push_stack(table_name.0 as i64);
             env_push_stack(cols.len() as i64);
@@ -56,34 +33,29 @@ impl Database {
             }
         };
 
-        let (offset, size) = unsafe { read_raw() };
+        // Receive offset and size from env. 
+        let (status, offset, size) = unsafe { read_raw() };
+        SdkError::express_from_status(status)?;
         
         let table = {
             let memory: *const u8 = offset as *const u8;
 
             let slice = unsafe {
-                //let start = memory.offset(offset as isize);
                 core::slice::from_raw_parts(memory, size as usize)
             };
-
-            unsafe {
-                log(1)
-            }
 
             if let Ok(table) = bincode::deserialize::<TableRows>(slice) {
                 table
             } else {
-                panic!()
+                return Err(SdkError::Conversion)
             }
         };
 
-        table
+        Ok(table)
 
-        //TableRows { rows: vec![TableRow {row: vec![TypeWrap(vec![8])]}] }
-        //TableRows::from_raw_parts(offset, size as usize).unwrap()
     }
 
-    pub fn write_table(table_name: &str, columns: &[&str], segments: &[&[u8]]) {
+    pub fn write_table(table_name: &str, columns: &[&str], segments: &[&[u8]]) -> Result<(), SdkError> {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
@@ -111,6 +83,7 @@ impl Database {
             }
         }
 
-        unsafe { write_raw() }
+        let status = unsafe { write_raw() };
+        SdkError::express_from_status(status)
     }
 }

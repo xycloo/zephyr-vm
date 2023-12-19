@@ -15,13 +15,13 @@ pub mod vm;
 pub mod error;
 
 pub mod stack;
-pub mod symbol;
 pub mod vm_context;
 
 use anyhow::Result;
 
-#[cfg(feature = "native")]
-mod native;
+/// This only for testing
+#[cfg(feature = "testutils")]
+mod testutils;
 
 /// Standard object for Zephyr. This trait must be implemented for all
 /// components that are encompassed by the Zephyr VM, specifically

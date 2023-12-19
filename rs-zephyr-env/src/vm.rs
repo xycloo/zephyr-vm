@@ -124,96 +124,12 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 }
 
 #[cfg(test)]
-mod otf_test {
-    use std::fs::read;
-    use std::rc::Rc;
-
-    use crate::{host::Host, native::database::MercuryDatabase, ZephyrMock};
-
-    use super::Vm;
-
-    #[test]
-    fn simple_vm_invocation() {
-        let code = &[
-            0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 7, 12, 1, 8, 111, 110, 95,
-            99, 108, 111, 115, 101, 0, 0, 10, 10, 1, 8, 0, 65, 0, 65, 1, 106, 26, 11, 0, 10, 4,
-            110, 97, 109, 101, 2, 3, 1, 0, 0,
-        ];
-
-        let host = Host::<MercuryDatabase>::mocked().unwrap();
-
-        let start = std::time::Instant::now();
-
-        let vm = Vm::new(&host, code).unwrap();
-
-        host.load_context(Rc::clone(&vm)).unwrap();
-
-        vm.metered_call(&host).unwrap();
-
-        println!("elapsed {:?}", start.elapsed());
-    }
-
-    #[test]
-    fn alloc_invocation() {
-        let code = { read("./../target/wasm32-unknown-unknown/release/alloc.wasm").unwrap() };
-
-        let host = Host::<MercuryDatabase>::mocked().unwrap();
-
-        let start = std::time::Instant::now();
-
-        let vm = Vm::new(&host, code.as_slice()).unwrap();
-
-        host.load_context(Rc::clone(&vm)).unwrap();
-
-        vm.metered_call(&host).unwrap();
-
-        println!("elapsed {:?}", start.elapsed());
-    }
-
-    #[test]
-    fn with_ledger_close_meta() {
-        let code = { read("./../target/wasm32-unknown-unknown/release/alloc.wasm").unwrap() };
-
-        let mut host = Host::<MercuryDatabase>::mocked().unwrap();
-
-        {
-            let ledger_close_meta = &[0, 0, 0, 0, 0, 0, 0, 1];
-            host.add_ledger_close_meta(ledger_close_meta.to_vec())
-                .unwrap();
-        }
-
-        let start = std::time::Instant::now();
-
-        let vm = Vm::new(&host, code.as_slice()).unwrap();
-
-        host.load_context(Rc::clone(&vm)).unwrap();
-
-        vm.metered_call(&host).unwrap();
-
-        println!("elapsed {:?}", start.elapsed());
-    }
-
-    #[test]
-    fn dbread_mocked_invocation() {
-        let code = &[
-            0, 97, 115, 109, 1, 0, 0, 0, 1, 8, 2, 96, 0, 0, 96, 1, 126, 0, 2, 28, 2, 2, 100, 98, 8,
-            114, 101, 97, 100, 95, 114, 97, 119, 0, 0, 5, 115, 116, 97, 99, 107, 4, 112, 117, 115,
-            104, 0, 1, 3, 2, 1, 0, 7, 12, 1, 8, 111, 110, 95, 99, 108, 111, 115, 101, 0, 2, 10, 12,
-            1, 10, 0, 66, 177, 242, 7, 16, 1, 16, 0, 11, 0, 36, 4, 110, 97, 109, 101, 1, 20, 2, 0,
-            6, 100, 98, 114, 101, 97, 100, 1, 9, 115, 116, 97, 99, 107, 112, 117, 115, 104, 2, 7,
-            3, 0, 0, 1, 0, 2, 0,
-        ];
-
-        let host = Host::<MercuryDatabase>::mocked().unwrap();
-
-        let start = std::time::Instant::now();
-
-        let vm = Vm::new(&host, code).unwrap();
-
-        host.load_context(Rc::clone(&vm)).unwrap();
-
-        vm.metered_call(&host).unwrap();
-
-        println!("elapsed {:?}", start.elapsed());
-    }
+mod tests {
+    // Previous tests were removed due to being unstructured
+    // and unorganized.
+    //
+    // Tests of the Mercury integration are currently in Mercury's 
+    // codebase.
+    //
+    // TODO: rewrite Zephyr-only tests.
 }

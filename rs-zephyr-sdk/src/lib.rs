@@ -6,9 +6,10 @@ pub use database::{TableRow, TableRows};
 
 use database::Database;
 use ledger_meta::MetaReader;
+use rs_zephyr_common::ZephyrStatus;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
-use stellar_xdr::ReadXdr;
+use stellar_xdr::next::{Limits, ReadXdr};
 use thiserror::Error;
 
 pub use ledger_meta::EntryChanges;
@@ -24,11 +25,11 @@ extern crate wee_alloc;
 extern "C" {
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_raw"]
-    pub fn read_raw() -> (i64, i64);
+    pub fn read_raw() -> (i64, i64, i64);
 
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "write_raw"]
-    fn write_raw();
+    fn write_raw() -> i64;
 
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_ledger_meta"]
@@ -48,6 +49,34 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 pub enum SdkError {
     #[error("Conversion error.")]
     Conversion,
+
+    #[error("Error in reading database.")]
+    DbRead,
+
+    #[error("Error in writing database.")]
+    DbWrite,
+
+    #[error("No value found on host pseudo store.")]
+    NoValOnStack,
+
+    #[error("Incorrect host configurations.")]
+    HostConfiguration,
+
+    #[error("Unknown error.")]
+    Unknown
+}
+
+impl SdkError {
+    fn express_from_status(status: i64) -> Result<(), Self> {
+        match ZephyrStatus::from(status as u32) {
+            ZephyrStatus::Success => Ok(()),
+            ZephyrStatus::DbReadError => Err(SdkError::DbRead),
+            ZephyrStatus::DbWriteError => Err(SdkError::DbWrite),
+            ZephyrStatus::NoValOnStack => Err(SdkError::NoValOnStack),
+            ZephyrStatus::HostConfiguration => Err(SdkError::HostConfiguration),
+            ZephyrStatus::Unknown => Err(SdkError::Unknown)
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -67,16 +96,16 @@ impl TypeWrap {
 
 #[derive(Clone, Default)]
 pub struct EnvClient {
-    xdr: Option<stellar_xdr::LedgerCloseMeta>,
+    xdr: Option<stellar_xdr::next::LedgerCloseMeta>,
 }
 
 // Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
-    pub fn db_write(&self, table_name: &str, columns: &[&str], segments: &[&[u8]]) {
+    pub fn db_write(&self, table_name: &str, columns: &[&str], segments: &[&[u8]]) -> Result<(), SdkError> {
         Database::write_table(table_name, columns, segments)
     }
 
-    pub fn db_read(&self, table_name: &str, columns: &[&str]) -> TableRows {
+    pub fn db_read(&self, table_name: &str, columns: &[&str]) -> Result<TableRows, SdkError> {
         Database::read_table(table_name, columns)
     }
 
@@ -86,7 +115,7 @@ impl EnvClient {
         MetaReader::new(meta)
     }
 
-    pub fn last_ledger_meta_xdr(&mut self) -> &stellar_xdr::LedgerCloseMeta {
+    pub fn last_ledger_meta_xdr(&mut self) -> &stellar_xdr::next::LedgerCloseMeta {
         if self.xdr.is_none() {
             let (offset, size) = unsafe { read_ledger_meta() };
 
@@ -97,7 +126,7 @@ impl EnvClient {
                     core::slice::from_raw_parts(start, size as usize)
                 };
 
-                stellar_xdr::LedgerCloseMeta::from_xdr(slice).unwrap()
+                stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap()
             };
 
             self.xdr = Some(ledger_meta);
@@ -108,7 +137,7 @@ impl EnvClient {
 }
 
 pub mod scval_utils {
-    use stellar_xdr::{ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
+    use stellar_xdr::next::{ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
 
     pub fn to_datakey_u32(int: u32) -> ScVal {
         ScVal::U32(int)

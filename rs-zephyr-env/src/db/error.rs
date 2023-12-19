@@ -13,4 +13,7 @@ pub enum DatabaseError {
 
     #[error("Zephyr query error.")]
     ZephyrQueryError,
+
+    #[error("Unable to write to DB.")]
+    WriteError,
 }

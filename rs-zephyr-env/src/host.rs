@@ -4,6 +4,7 @@
 //! the implementor.
 
 use anyhow::Result;
+use rs_zephyr_common::ZephyrStatus;
 
 //use sha2::{Digest, Sha256};
 use std::{
@@ -258,9 +259,6 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         memory.write(&mut caller, offset, data)?;
 
-        println!("{:?}", data);
-        println!("\n\n{:?}", memory.data(&mut caller));
-
         Ok((offset as i64, data.len() as i64))
     }
 
@@ -309,8 +307,6 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
                     (*non_fixed * 2) as usize + start
                 };
-
-                println!("data segments size: {}", data_segments_size_idx);
 
                 start += 1;
 
@@ -409,70 +405,14 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             };
 
             let user_id = host.get_host_id();
+
+            drop(stack);
+            stack_obj.0.clear();
             
             db_impl.db.read_raw(user_id, read_point_hash, &read_data)?
         };
 
-
         Self::write_to_memory(caller, read.as_slice())
-
-/* 
-        let (memory, offset, data) = {
-            let host = caller.data();
-            let db_obj = host.0.database.borrow();
-            let db_impl = db_obj.0.borrow();
-            let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0 .0.borrow_mut();
-
-            if let DatabasePermissions::WriteOnly = db_impl.permissions {
-                return Err(DatabaseError::ReadOnWriteOnly.into());
-            }
-
-            let id = {
-                let value = host.get_host_id();
-                byte_utils::i64_to_bytes(value)
-            };
-
-            let read_point_hash: [u8; 16] = {
-                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
-                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
-
-                md5::compute([point_bytes, id].concat()).into()
-            };
-
-            let read_data = {
-                let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
-                let mut retrn = Vec::new();
-
-                for n in 2..data_size_idx {
-                    retrn.push(*stack.get(n as usize).ok_or(HostError::NoValOnStack)?);
-                }
-
-                retrn
-            };
-
-            let user_id = host.get_host_id();
-            let read = db_impl.db.read_raw(user_id, read_point_hash, &read_data)?;
-
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap(); // todo: make safe
-
-            let manager = &vm.memory_manager;
-            let mut offset_mut = manager.offset.borrow_mut();
-            let new_offset = offset_mut.checked_add(read.len()).unwrap();
-
-            *offset_mut = new_offset;
-
-            drop(stack);
-            stack_obj.0.clear();
-
-            (manager.memory, new_offset, read)
-        };
-
-        memory.write(&mut caller, offset, &data)?;
-
-        println!("successfully wrote to memory {}, {:?}", offset, data.len());
-        Ok((offset as i64, data.len() as i64)) */
     }
 
     /// Returns all the host functions that must be defined in the linker.
@@ -500,7 +440,19 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         let db_write_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                Self::write_database_raw(caller)
+                let result = Self::write_database_raw(caller);
+                if result.is_err() {
+                    match result.err().unwrap().downcast_ref() {
+                        Some(DatabaseError::WriteError) => ZephyrStatus::DbWriteError as i64,
+                        Some(DatabaseError::ZephyrQueryError) => ZephyrStatus::DbReadError as i64,
+                        Some(DatabaseError::ZephyrQueryMalformed) => ZephyrStatus::DbReadError as i64,
+                        Some(DatabaseError::ReadOnWriteOnly) => ZephyrStatus::HostConfiguration as i64,
+                        Some(DatabaseError::WriteOnReadOnly) => ZephyrStatus::HostConfiguration as i64,
+                        None => ZephyrStatus::Unknown as i64
+                    } 
+                } else {
+                    ZephyrStatus::Success as i64
+                }
             });
 
             FunctionInfo {
@@ -512,13 +464,18 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                
-                let response = Host::read_database_raw(caller);
-                if let Ok(res) = response {
-                    res
+                let result = Host::read_database_raw(caller);
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
                 } else {
-                    println!("{:?}", response.err().unwrap());
-                    panic!() // unsafe.
+                    match result.err().unwrap().downcast_ref() {
+                        Some(DatabaseError::WriteError) => (ZephyrStatus::DbWriteError as i64, 0, 0),
+                        Some(DatabaseError::ZephyrQueryError) => (ZephyrStatus::DbReadError as i64, 0, 0),
+                        Some(DatabaseError::ZephyrQueryMalformed) => (ZephyrStatus::DbReadError as i64, 0, 0),
+                        Some(DatabaseError::ReadOnWriteOnly) => (ZephyrStatus::HostConfiguration as i64, 0, 0),
+                        Some(DatabaseError::WriteOnReadOnly) => (ZephyrStatus::HostConfiguration as i64, 0, 0),
+                        None => (ZephyrStatus::Unknown as i64, 0, 0)
+                    }
                 }
             });
 
@@ -559,7 +516,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 if let Ok(res) = Host::read_ledger_meta(caller) {
                     res
                 } else {
-                    // this is also pretty unsafe
+                    // this is also unsafe
                     // panic!()
 
                     // current implementation is faulty

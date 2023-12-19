@@ -1,4 +1,4 @@
-use stellar_xdr::{LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionMeta};
+use stellar_xdr::next::{LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionMeta};
 
 #[derive(Clone)]
 pub struct EntryChanges {
@@ -8,7 +8,7 @@ pub struct EntryChanges {
     pub created: Vec<LedgerEntry>,
 }
 
-pub struct MetaReader<'a>(&'a stellar_xdr::LedgerCloseMeta);
+pub struct MetaReader<'a>(&'a stellar_xdr::next::LedgerCloseMeta);
 
 impl<'a> MetaReader<'a> {
     pub fn new(meta: &'a LedgerCloseMeta) -> Self {
@@ -19,13 +19,12 @@ impl<'a> MetaReader<'a> {
         match &self.0 {
             LedgerCloseMeta::V1(v1) => v1.ledger_header.header.ledger_seq,
             LedgerCloseMeta::V0(v0) => v0.ledger_header.header.ledger_seq,
-            LedgerCloseMeta::V2(v2) => v2.ledger_header.header.ledger_seq,
         }
     }
 
     // todo: add handles for other entries.
 
-    pub fn v2_ledger_entries(&self) -> EntryChanges {
+    pub fn v1_ledger_entries(&self) -> EntryChanges {
         let mut state_entries = Vec::new();
         let mut removed_entries = Vec::new();
         let mut updated_entries = Vec::new();
@@ -33,8 +32,7 @@ impl<'a> MetaReader<'a> {
 
         match &self.0 {
             LedgerCloseMeta::V0(_) => (),
-            LedgerCloseMeta::V1(_) => (),
-            LedgerCloseMeta::V2(v2) => {
+            LedgerCloseMeta::V1(v2) => {
                 for tx_processing in v2.tx_processing.iter() {
                     match &tx_processing.tx_apply_processing {
                         TransactionMeta::V3(meta) => {

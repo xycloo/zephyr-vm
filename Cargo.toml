@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "rs-zephyr-env", 
     "rs-zephyr-sdk",
-    "examples/alloc",
+    "rs-zephyr-common",
     "examples/simple",
     "examples/read-simple",
     "zephyr-cli",

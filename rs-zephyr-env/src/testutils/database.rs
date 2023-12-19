@@ -45,12 +45,6 @@ pub struct MercuryDatabase {
     connect: DbAuth,
 }
 
-impl MercuryDatabase {
-    fn run_sql_insert(&self) -> Result<(), DatabaseError> {
-        Ok(())
-    }
-}
-
 impl ZephyrMock for MercuryDatabase {
     fn mocked() -> Result<Self> {
         Ok(MercuryDatabase {

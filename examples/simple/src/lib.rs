@@ -1,5 +1,5 @@
 use rs_zephyr_sdk::{EntryChanges, EnvClient};
-use stellar_xdr::{LedgerEntry, LedgerEntryData, ScSymbol, ScVal, ScVec, VecM};
+use stellar_xdr::next::{LedgerEntry, LedgerEntryData, ScSymbol, ScVal, ScVec, VecM};
 
 const XYCLOANS_CONTRACT: [u8; 32] = [
     228, 86, 123, 16, 235, 194, 45, 195, 51, 232, 164, 150, 178, 46, 102, 251, 216, 147, 78, 42,
@@ -12,8 +12,8 @@ fn write_step(state_entry: LedgerEntry, idx: usize, step: &mut [Option<i128>; 2]
 
     if let LedgerEntryData::ContractData(data) = &state_entry.data {
         let contract = match &data.contract {
-            stellar_xdr::ScAddress::Contract(id) => id.0,
-            stellar_xdr::ScAddress::Account(_) => {
+            stellar_xdr::next::ScAddress::Contract(id) => id.0,
+            stellar_xdr::next::ScAddress::Account(_) => {
                 unreachable!()
             }
         };
@@ -44,7 +44,7 @@ pub extern "C" fn on_close() {
     let reader = env.reader();
 
     let sequence = reader.ledger_sequence();
-    let EntryChanges { state, updated, .. } = reader.v2_ledger_entries();
+    let EntryChanges { state, updated, .. } = reader.v1_ledger_entries();
 
     for state_entry in state {
         write_step(state_entry, 0, &mut step)
@@ -60,6 +60,6 @@ pub extern "C" fn on_close() {
             "liquidity",
             &["ledger", "delta"],
             &[&sequence.to_be_bytes(), delta.to_be_bytes().as_slice()],
-        )
+        ).unwrap()
     }
 }
