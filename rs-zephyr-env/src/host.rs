@@ -4,6 +4,7 @@
 //! the implementor.
 
 use anyhow::Result;
+
 //use sha2::{Digest, Sha256};
 use std::{
     borrow::BorrowMut,
@@ -228,7 +229,10 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 return Err(HostError::NoLedgerCloseMeta.into());
             }
 
-            current.clone().unwrap()
+            current.clone().unwrap() // this is unsafe and can easily break the execution
+                                     // we should either not make the close meta an option
+                                     // or handle the error here and return the error to
+                                     // the guest.
         };
 
         Self::write_to_memory(caller, ledger_close_meta.as_slice())
@@ -253,6 +257,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         };
 
         memory.write(&mut caller, offset, data)?;
+
+        println!("{:?}", data);
+        println!("\n\n{:?}", memory.data(&mut caller));
 
         Ok((offset as i64, data.len() as i64))
     }
@@ -365,7 +372,51 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok(())
     }
 
-    fn read_database_raw(mut caller: Caller<Self>) -> Result<(i64, i64)> {
+    fn read_database_raw(caller: Caller<Self>) -> Result<(i64, i64)> {
+        let host = caller.data();
+
+        let read = {
+            let db_obj = host.0.database.borrow();
+            let db_impl = db_obj.0.borrow();
+            let stack_obj = host.0.stack.borrow_mut();
+            let stack = stack_obj.0 .0.borrow_mut();
+
+            if let DatabasePermissions::WriteOnly = db_impl.permissions {
+                return Err(DatabaseError::ReadOnWriteOnly.into());
+            }
+
+            let id = {
+                let value = host.get_host_id();
+                byte_utils::i64_to_bytes(value)
+            };
+
+            let read_point_hash: [u8; 16] = {
+                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
+                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
+
+                md5::compute([point_bytes, id].concat()).into()
+            };
+
+            let read_data = {
+                let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                let mut retrn = Vec::new();
+
+                for n in 2..data_size_idx {
+                    retrn.push(*stack.get(n as usize).ok_or(HostError::NoValOnStack)?);
+                }
+
+                retrn
+            };
+
+            let user_id = host.get_host_id();
+            
+            db_impl.db.read_raw(user_id, read_point_hash, &read_data)?
+        };
+
+
+        Self::write_to_memory(caller, read.as_slice())
+
+/* 
         let (memory, offset, data) = {
             let host = caller.data();
             let db_obj = host.0.database.borrow();
@@ -415,11 +466,13 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             drop(stack);
             stack_obj.0.clear();
 
-            (manager.memory, new_offset, read.to_vec())
+            (manager.memory, new_offset, read)
         };
 
         memory.write(&mut caller, offset, &data)?;
-        Ok((offset as i64, data.len() as i64))
+
+        println!("successfully wrote to memory {}, {:?}", offset, data.len());
+        Ok((offset as i64, data.len() as i64)) */
     }
 
     /// Returns all the host functions that must be defined in the linker.
@@ -459,10 +512,13 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                if let Ok(res) = Host::read_database_raw(caller) {
+                
+                let response = Host::read_database_raw(caller);
+                if let Ok(res) = response {
                     res
                 } else {
-                    panic!()
+                    println!("{:?}", response.err().unwrap());
+                    panic!() // unsafe.
                 }
             });
 
@@ -503,7 +559,17 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 if let Ok(res) = Host::read_ledger_meta(caller) {
                     res
                 } else {
-                    panic!()
+                    // this is also pretty unsafe
+                    // panic!()
+
+                    // current implementation is faulty
+                    // and only serves mocked testing
+                    // purposes. Any attempt to run
+                    // Zephyr without providing the latest
+                    // close meta has a high probability of
+                    // breaking.
+
+                    (0, 0)
                 }
             });
 

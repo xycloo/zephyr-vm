@@ -2,7 +2,9 @@ mod database;
 mod ledger_meta;
 mod symbol;
 
-use database::{Database, TableRows};
+pub use database::{TableRow, TableRows};
+
+use database::Database;
 use ledger_meta::MetaReader;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;

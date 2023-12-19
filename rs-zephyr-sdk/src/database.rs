@@ -1,4 +1,4 @@
-use crate::{env_push_stack, read_raw, symbol, write_raw, SdkError, TypeWrap};
+use crate::{env_push_stack, read_raw, symbol, write_raw, SdkError, TypeWrap, log};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -15,11 +15,19 @@ impl TableRows {
     pub fn from_raw_parts(offset: i64, size: usize) -> Result<Self, SdkError> {
         let memory: *const u8 = 0 as *const u8;
 
+        unsafe {
+            log(offset)
+        }
+
         let slice = unsafe {
             let start = memory.offset(offset as isize);
             core::slice::from_raw_parts(start, size as usize)
         };
 
+        unsafe {
+            log(slice[0] as i64);
+            log(slice[slice.len()-1] as i64)
+        }
         if let Ok(table) = bincode::deserialize::<Self>(slice) {
             Ok(table)
         } else {
@@ -49,8 +57,30 @@ impl Database {
         };
 
         let (offset, size) = unsafe { read_raw() };
+        
+        let table = {
+            let memory: *const u8 = offset as *const u8;
 
-        TableRows::from_raw_parts(offset, size as usize).unwrap()
+            let slice = unsafe {
+                //let start = memory.offset(offset as isize);
+                core::slice::from_raw_parts(memory, size as usize)
+            };
+
+            unsafe {
+                log(1)
+            }
+
+            if let Ok(table) = bincode::deserialize::<TableRows>(slice) {
+                table
+            } else {
+                panic!()
+            }
+        };
+
+        table
+
+        //TableRows { rows: vec![TableRow {row: vec![TypeWrap(vec![8])]}] }
+        //TableRows::from_raw_parts(offset, size as usize).unwrap()
     }
 
     pub fn write_table(table_name: &str, columns: &[&str], segments: &[&[u8]]) {

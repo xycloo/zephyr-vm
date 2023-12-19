@@ -7,4 +7,10 @@ pub enum DatabaseError {
 
     #[error("Invalid permissions. Tried writing when in read-only")]
     WriteOnReadOnly,
+
+    #[error("Zephyr query malformed.")]
+    ZephyrQueryMalformed,
+
+    #[error("Zephyr query error.")]
+    ZephyrQueryError,
 }

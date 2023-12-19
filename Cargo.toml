@@ -5,6 +5,7 @@ members = [
     "rs-zephyr-sdk",
     "examples/alloc",
     "examples/simple",
+    "examples/read-simple",
     "zephyr-cli",
 ]
 
