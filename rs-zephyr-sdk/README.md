@@ -1,7 +1,6 @@
 # Zephyr Rust SDK
 
-> This SDK is still under heavy development and should not be used as reference for other similar applications.
+Barebones implementation of guest <-> host communication patterns on the guest side.
 
-### Testing
-
-At the current state, testing Zephyr programs is not possible. Once we implement the shield database on the host we can use it to mock the database.
+This implementation is the beginning of a feature complete SDK that can effectively
+leverage all of the Zephyr + Mercury integration host functionalities.  

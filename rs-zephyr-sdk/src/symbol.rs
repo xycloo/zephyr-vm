@@ -1,3 +1,11 @@
+//! We use Soroban's Symbol type for ease of implementation.
+//!
+//! This does not mean Zephyr encompasses in any way the Soroban environoment.
+
+/// Wrapper around the inner small symbol value.
+/// Decodes the integer to a string with at
+/// maximum 9 characters. The idea and implementation
+/// are taken from the Soroban implementation.
 const TAG: u8 = 14;
 
 #[derive(Debug, thiserror::Error)]
