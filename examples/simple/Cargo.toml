@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wee_alloc = "0.4.5"
 stellar-xdr = { version = "20.0.0-rc1", default-features = false, features=["next", "serde", "base64"] }
 rs-zephyr-sdk = { path="../../rs-zephyr-sdk" }
 

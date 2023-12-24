@@ -1,4 +1,4 @@
-use stellar_xdr::next::{LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionMeta};
+use stellar_xdr::next::{LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionMeta, TransactionResultMeta, TransactionPhase, GeneralizedTransactionSet, TransactionSet, TransactionEnvelope, TxSetComponent};
 
 #[derive(Clone)]
 pub struct EntryChanges {
@@ -24,6 +24,52 @@ impl<'a> MetaReader<'a> {
 
     // todo: add handles for other entries.
 
+    pub fn envelopes(&self) -> Vec<TransactionEnvelope> {
+        match &self.0 {
+            LedgerCloseMeta::V0(v0) => {
+                v0.tx_set.txs.to_vec()
+            },
+            LedgerCloseMeta::V1(v1) => {
+                let phases = match &v1.tx_set {
+                    GeneralizedTransactionSet::V1(v1) => &v1.phases,
+                };
+
+                let mut envelopes = Vec::new();
+
+                for phase in phases.iter() {
+                    match phase {
+                        TransactionPhase::V0(v0) => {
+                            for txset_component in v0.iter() {
+                                match txset_component {
+                                    TxSetComponent::TxsetCompTxsMaybeDiscountedFee(
+                                        txset_maybe_discounted_fee,
+                                    ) => {
+                                        for tx_envelope in txset_maybe_discounted_fee.txs.to_vec() {
+                                            envelopes.push(tx_envelope)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                envelopes
+            }
+        }
+    }
+
+    pub fn tx_processing(&self) -> Vec<TransactionResultMeta> {
+        match &self.0 {
+            LedgerCloseMeta::V1(v1) => {
+                v1.tx_processing.to_vec()
+            },
+            LedgerCloseMeta::V0(v0) => {
+                v0.tx_processing.to_vec()
+            },
+        }
+    }
+
     pub fn v1_ledger_entries(&self) -> EntryChanges {
         let mut state_entries = Vec::new();
         let mut removed_entries = Vec::new();
@@ -32,8 +78,8 @@ impl<'a> MetaReader<'a> {
 
         match &self.0 {
             LedgerCloseMeta::V0(_) => (),
-            LedgerCloseMeta::V1(v2) => {
-                for tx_processing in v2.tx_processing.iter() {
+            LedgerCloseMeta::V1(v1) => {
+                for tx_processing in v1.tx_processing.iter() {
                     match &tx_processing.tx_apply_processing {
                         TransactionMeta::V3(meta) => {
                             let ops = &meta.operations;
