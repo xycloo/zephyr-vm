@@ -4,7 +4,7 @@ use std::io::Read;
 
 use clap::{Parser, Subcommand};
 
-const BACKEND_ENDPOINT: &str = "http://ec2-16-170-242-7.eu-north-1.compute.amazonaws.com:3030";
+const BACKEND_ENDPOINT: &str = "http://ec2-13-50-173-187.eu-north-1.compute.amazonaws.com:3030";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

@@ -441,9 +441,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         let db_write_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 let result = Self::write_database_raw(caller);
-                println!("{:?}", result);
                 let res = if result.is_err() {
-                    println!("theres an errorp");
                     match result.err().unwrap().downcast_ref() {
                         Some(DatabaseError::WriteError) => ZephyrStatus::DbWriteError as i64,
                         Some(DatabaseError::ZephyrQueryError) => ZephyrStatus::DbReadError as i64,
@@ -455,8 +453,6 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                 } else {
                     ZephyrStatus::Success as i64
                 };
-
-                println!("result is {}", res);
 
                 res
             });

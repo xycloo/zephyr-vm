@@ -19,3 +19,38 @@ Only after having created all the needed tables (with correct columns) you can u
 ```
 zephyr --jwt $JWT_TOKEN deploy --wasm ./target/wasm32-unknown-unknown/release/zephyr_hello_ledger.optimized.wasm
 ```
+
+## Query
+
+Now I can query all rows in my zephyr table:
+
+```graphql
+query MyQuery {
+  allZephyrD625B7Bb470Ff3Fe8Cd1351A1Cbb7187S {
+    edges {
+      node {
+        sequence
+        proc
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "data": {
+    "allZephyrD625B7Bb470Ff3Fe8Cd1351A1Cbb7187S": {
+      "edges": [
+        {
+          "node": {
+            "sequence": "\\x000280d3",
+            "proc": "\\x00000002"
+          }
+        },
+        {"more": "nodes"}
+      ]
+    }
+  }
+}
+```
