@@ -1,0 +1,292 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Concepts SDK API - Zephyr Documentation</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="reference.html" class="active"><strong aria-hidden="true">2.</strong> Concepts SDK API</a></li><li class="chapter-item expanded "><a href="setup.html"><strong aria-hidden="true">3.</strong> Setup</a></li><li class="chapter-item expanded "><a href="hello-ledger.html"><strong aria-hidden="true">4.</strong> Write a Hello Ledger Program</a></li><li class="chapter-item expanded "><a href="hello-ledger-cli.html"><strong aria-hidden="true">5.</strong> Zephyr CLI: Create table and Upload</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">6.</strong> Other examples</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="contracts-map.html"><strong aria-hidden="true">6.1.</strong> Network SAC Contracts</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Zephyr Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="concepts-sdk-api-definition"><a class="header" href="#concepts-sdk-api-definition">Concepts SDK API Definition</a></h1>
+<p>Below there are some important concepts about the ZephyrVM integration. We recommend reading
+this section before getting hands-on with the tutorial in the next sections.</p>
+<h2 id="runs-for-every-ledger"><a class="header" href="#runs-for-every-ledger">Runs for every ledger</a></h2>
+<p>Zephyr programs run sequentially for every new ledger that is closed in the network.
+This means that once your program is deployed it will be run for every new ledger close
+since the moment of deployment. This is at least until we introduce conditional execution
+that will make Zephyr less expensive.</p>
+<h2 id="before-you-deploy"><a class="header" href="#before-you-deploy">Before you deploy</a></h2>
+<p>Before you deploy your program and expect for it to start working immediately, it's important 
+to know that you are going to need to correctly create all the tables that your program accesses.</p>
+<p>In fact the general workflow for working with Zephyr is:</p>
+<ol>
+<li>write the program and take note of the tables and columns you access.</li>
+<li>create these tables with the columns in the database through the CLI.</li>
+<li>deploy the program.</li>
+</ol>
+<p>If you deploy the program without having first created the <strong>correct</strong> tables through the CLI
+the execution of the program will always exit unsuccessfully, and currently there isn't a loggin
+infra available to users that makes this easy to detect.</p>
+<h2 id="symbols-inherited-from-soroban"><a class="header" href="#symbols-inherited-from-soroban">Symbols inherited from Soroban</a></h2>
+<p>For ease of implementation all table names and table columns are pretty much Soroban symbols. This means
+that they undergo all of the constraints that Soroban symbols have. They cannot exceed 9 characters and valid characters are <code>a-zA-Z0-9_</code>. This is an efficiency-driven decision. </p>
+<p>Since unlike the Soroban VM we are using WASM's multivalue feature, we're considering extending the lenght 
+of a symbol but it's not currently implemented. </p>
+<h2 id="slice-based-communication"><a class="header" href="#slice-based-communication">Slice-based communication</a></h2>
+<p>Currently we haven't implemented any Zephyr types yet, so when you write and read from the database, you're
+in charge of serializing/deserializing the contents to/from a bytes slice. This will become clearer once you
+take a look at the next sections.</p>
+<h2 id="environemnt"><a class="header" href="#environemnt">Environemnt</a></h2>
+<p>The guest program, i.e your program will access the database and ledger close metas thorugh the <code>Env</code> object
+exported by the SDK.</p>
+<p>This object has currently the following functions:</p>
+<ul>
+<li>
+<p><code>db_write(&amp;self, table_name: &amp;str, columns: &amp;[&amp;str], segments: &amp;[&amp;[u8]]) -&gt; Result&lt;(), SdkError&gt;</code> which writes 
+to the DB's <code>table</code> table the specified columns with the specified <code>segments</code> of data (always as byte slices).</p>
+</li>
+<li>
+<p><code>db_read(&amp;self, table_name: &amp;str, columns: &amp;[&amp;str]) -&gt; Result&lt;TableRows, SdkError&gt;</code> which reads from 
+the DB's <code>table</code> table the specified columns. This returns a <code>TableRows</code> object which wraps all the rows and columns:</p>
+</li>
+</ul>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Current implementation treats these as named structs, but could change.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct TableRows {
+    pub rows: Vec&lt;TableRow&gt;,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct TableRow {
+    pub row: Vec&lt;TypeWrap&gt;,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct TypeWrap(pub Vec&lt;u8&gt;);
+<span class="boring">}</span></code></pre></pre>
+<p>As you can see <code>TablesRows</code> wraps the rows, and each <code>TableRow</code> wraps each requested column. The value in each 
+column for each row is <code>TypeWrap</code>, so a vectory of bytes.</p>
+<ul>
+<li>
+<p><code>reader(&amp;mut self) -&gt; MetaReader</code> returns the <code>MetaReader</code> object, which should help you in getting
+sections of the ledger meta more easily. However, the current implementation of the <code>MetaReader</code> is very limited.
+If you're searching for a part of the metadata that isn't easily extracted through the reader then use the <code>last_ledger_meta_xdr()</code> function.</p>
+</li>
+<li>
+<p><code>last_ledger_meta_xdr(&amp;mut self) -&gt; &amp;stellar_xdr::next::LedgerCloseMeta</code> which returns the whole <code>LedgerCloseMeta</code>
+object (from Stellar's XDR definition).</p>
+</li>
+</ul>
+<h2 id="zephyrs-db-access"><a class="header" href="#zephyrs-db-access">Zephyr's DB Access</a></h2>
+<p>Of course, Zephyr-executed programs have strict limitations on database writes and reads. Mainly access limitations
+for now. Only zephyr tables (created through the CLI) created by your account are accessible. Mercury built-in tables
+(contract events, ledger entries, payments, etc) will never be able to be written by Zephyr and are currently not able
+to be read (though we plan on enabling this once we write the authorization part for this). </p>
+<h2 id="querying-zephyr-tables"><a class="header" href="#querying-zephyr-tables">Querying Zephyr Tables</a></h2>
+<p>Zephyr tables your create and access don't actually show up with the name you give them in the database. Rather they 
+are a md5 hash of the table name you provide and your Mercury user id. This means that when querying your Zephyr table 
+through GraphQL you don't query the table name rather the hash.</p>
+<p>This is how the hash is generated:</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let id = {
+    let value = host.get_host_id();
+    byte_utils::i64_to_bytes(value)
+};
+
+let write_point_hash: [u8; 16] = {
+    let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
+    let point_bytes = byte_utils::i64_to_bytes(*point_raw);
+
+    md5::compute([point_bytes, id].concat()).into()
+};
+<span class="boring">}</span></code></pre></pre>
+<p>Basically, you compute the hash of the i64 repr of the table name symbol concatenated with your user id. Anyways, the
+CLI will output the actual table name queryable from GraphQL once you deploy the table.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="intro.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next" href="setup.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="intro.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next" href="setup.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </body>
+</html>
