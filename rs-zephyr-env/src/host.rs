@@ -456,7 +456,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                     ZephyrStatus::Success as i64
                 };
 
-                println!("result is {}", res)
+                println!("result is {}", res);
+
+                res
             });
 
             FunctionInfo {
