@@ -33,7 +33,7 @@ The Zephyr CLI allows you to:
 - create tables.
 - deploy Zephyr programs to Mercury.
 
-Refer to the [docs]() to learn how to use Zephyr on Mercury.
+Refer to the [docs](https://zephyr-b8t.pages.dev/) to learn how to use Zephyr on Mercury.
 
 # Guide for early users.
 
@@ -61,5 +61,5 @@ we haven't introduced metering yet.
 4. cd inside zephyr's CLI crate and build (`cd zephyr/zephyr-cli; cargo build --release; cd ../..`)
 5. cd inside the starter template and create an alias for the zephyr cli (`cd zephyr-examples/zephyr-starter; alias zephyr="../../zephyr/target/release/zephyr-mercury-cli"`)
 
-You're now all set to start working on the starter template. Now you are ready to visit the docs and start testing
-out Zephyr. 
+You're now all set to start working on the starter template. Now you are ready to visit 
+[the docs](https://zephyr-b8t.pages.dev/) and start testing out Zephyr. 

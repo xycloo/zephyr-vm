@@ -125,6 +125,12 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::read;
+    use std::rc::Rc;
+
+    use crate::{host::Host, testutils::database::MercuryDatabase, ZephyrMock};
+
+    use super::Vm;
     // Previous tests were removed due to being unstructured
     // and unorganized.
     //
@@ -132,4 +138,21 @@ mod tests {
     // codebase.
     //
     // TODO: rewrite Zephyr-only tests.
+
+    #[test]
+    fn alloc_invocation() {
+        let code = { read("/Users/tommasodeponti/Desktop/projects/master/zephyr-examples/zephyr-track-all-sac/target/wasm32-unknown-unknown/release/zephyr_track_all_sac.wasm").unwrap() };
+
+        let host = Host::<MercuryDatabase>::mocked().unwrap();
+
+        let start = std::time::Instant::now();
+
+        let vm = Vm::new(&host, code.as_slice()).unwrap();
+
+        host.load_context(Rc::clone(&vm)).unwrap();
+
+        //vm.metered_call(&host).unwrap();
+
+        println!("elapsed {:?}", start.elapsed());
+    }
 }

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Other examples - Zephyr Documentation</title>
+        <title>Track SAC Events - Zephyr Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -80,7 +80,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="reference.html"><strong aria-hidden="true">2.</strong> Concepts SDK API</a></li><li class="chapter-item expanded "><a href="setup.html"><strong aria-hidden="true">3.</strong> Setup</a></li><li class="chapter-item expanded "><a href="hello-ledger.html"><strong aria-hidden="true">4.</strong> Write a Hello Ledger Program</a></li><li class="chapter-item expanded "><a href="hello-ledger-cli.html"><strong aria-hidden="true">5.</strong> Zephyr CLI: Create table and Upload</a></li><li class="chapter-item expanded "><a href="examples.html" class="active"><strong aria-hidden="true">6.</strong> Other examples</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="contracts-map.html"><strong aria-hidden="true">6.1.</strong> Track Network SAC Contracts</a></li><li class="chapter-item expanded "><a href="sac-events.track.html"><strong aria-hidden="true">6.2.</strong> Track SAC Events</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="reference.html"><strong aria-hidden="true">2.</strong> Concepts SDK API</a></li><li class="chapter-item expanded "><a href="setup.html"><strong aria-hidden="true">3.</strong> Setup</a></li><li class="chapter-item expanded "><a href="hello-ledger.html"><strong aria-hidden="true">4.</strong> Write a Hello Ledger Program</a></li><li class="chapter-item expanded "><a href="hello-ledger-cli.html"><strong aria-hidden="true">5.</strong> Zephyr CLI: Create table and Upload</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">6.</strong> Other examples</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="contracts-map.html"><strong aria-hidden="true">6.1.</strong> Track Network SAC Contracts</a></li><li class="chapter-item expanded "><a href="sac-events.track.html" class="active"><strong aria-hidden="true">6.2.</strong> Track SAC Events</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -141,22 +141,129 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
-<p>Below are some of the examples we've written as of now. If you've built something using
-zephyr and want it to appear here, we'd love for you to open an issue for it <a href="https://github.com/xycloo/zephyr/issues">here</a>.</p>
-<p>These can be found also on <a href="https://github.com/xycloo/zephyr-examples">the Github repo</a>.</p>
+                        <h1 id="track-sac-events"><a class="header" href="#track-sac-events">Track SAC Events</a></h1>
+<blockquote>
+<p>Note: this program relies on the previous SAC tracker program.</p>
+</blockquote>
+<p>This program tracks all events of the SACs registered from the <a href="./contracts-map.html">previous</a> program.</p>
+<h3 id="currently-deployed-version"><a class="header" href="#currently-deployed-version">Currently deployed version</a></h3>
+<p>This program is already live on Zephyr and is tracking events for SACs wrapped in and after ledger <code>177442</code> 
+and its data can be accessed as follows:</p>
+<pre><code class="language-graphql">query SACEvents {
+  allZephyr86882807C5E507349D54F6F33Fc8229As {
+    edges {
+      node {
+        sequence
+        contract
+        topic1
+        topic2
+        topic3
+        topic4
+        data
+      }
+    }
+  }
+}
+</code></pre>
+<pre><code class="language-json">{
+  &quot;data&quot;: {
+    &quot;allZephyr86882807C5E507349D54F6F33Fc8229As&quot;: {
+      &quot;edges&quot;: [
+        {
+          &quot;node&quot;: {
+            &quot;sequence&quot;: &quot;\\x0002b522&quot;,
+            &quot;contract&quot;: &quot;\\xc184ad97f64befba0907b3cef6b570155c16658fcef92df221147d1592faa3e0&quot;,
+            &quot;topic1&quot;: &quot;\\x0000000f000000046d696e74&quot;,
+            &quot;topic2&quot;: &quot;\\x000000120000000000000000d08a167b577b96595971d6884e6a3097affb238ca5947585ead11660fa23676f&quot;,
+            &quot;topic3&quot;: &quot;\\x00000012000000000000000047447cded9fa966bd551e683c1d39d5e9b32361f1a6483c15382f7684751bea0&quot;,
+            &quot;topic4&quot;: &quot;\\x0000000e0000003c54454d3a47444949554654334b35355a4d574b5a4f484c495154544b47434c3237365a445253535a49354d46354c49524d594832454e545737374248&quot;,
+            &quot;data&quot;: &quot;\\x0000000a00000000000000000000000000000190&quot;
+          }
+        }
+      ]
+    }
+  }
+}
+</code></pre>
+<p>Remember that all this data is hex encoded bytes. <code>topicn</code> and <code>data</code> should be parsed as ScVals 
+(<code>ScVal::from_xdr(...)</code>), <code>contract</code> is the inner <code>Hash(&lt;this is contract&gt;)</code> so you can easily build the 
+corresponding string using the stellar-strkey libs. <code>sequence</code> is the big endian bytes repr for an <code>i64</code>. 
+For example you can parse it in js as follows</p>
+<pre><code class="language-js">const hex = &quot;\\x0002b522&quot;;
+const cleanHex = hex.replace(/\\x/g, '');
+const result = parseInt(cleanHex, 16);
+
+console.log(result);
+</code></pre>
+<h1 id="code"><a class="header" href="#code">Code</a></h1>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use rs_zephyr_sdk::{
+    stellar_xdr::next::{ContractEventBody, Limits, TransactionMeta, WriteXdr},
+    EnvClient,
+};
+
+#[no_mangle]
+pub extern &quot;C&quot; fn on_close() {
+    let mut env = EnvClient::default();
+    let reader = env.reader();
+
+    let sequence = reader.ledger_sequence();
+    let processing = reader.tx_processing();
+
+    let sacs = env.db_read(&quot;sacs&quot;, &amp;[&quot;contract&quot;]).unwrap();
+    let tracked_deployed_sacs: Vec&lt;&amp;Vec&lt;u8&gt;&gt; = sacs.rows.iter().map(|row| &amp;row.row[0].0).collect();
+
+    for tx_processing in processing {
+        if let TransactionMeta::V3(meta) = &amp;tx_processing.tx_apply_processing {
+            if let Some(soroban) = &amp;meta.soroban_meta {
+                if !soroban.events.is_empty() {
+                    for event in soroban.events.iter() {
+                        let contract_id = event.contract_id.as_ref().unwrap().0;
+                        if tracked_deployed_sacs.contains(&amp;contract_id.to_vec().as_ref()) {
+                            let (topics, data) = match &amp;event.body {
+                                ContractEventBody::V0(v0) =&gt; (
+                                    v0.topics
+                                        .iter()
+                                        .map(|topic| topic.to_xdr(Limits::none()).unwrap())
+                                        .collect::&lt;Vec&lt;Vec&lt;u8&gt;&gt;&gt;(),
+                                    v0.data.to_xdr(Limits::none()).unwrap(),
+                                ),
+                            };
+                            env.db_write(
+                                &quot;sac_event&quot;,
+                                &amp;[
+                                    &quot;sequence&quot;, &quot;contract&quot;, &quot;topic1&quot;, &quot;topic2&quot;, &quot;topic3&quot;, &quot;topic4&quot;,
+                                    &quot;data&quot;,
+                                ],
+                                &amp;[
+                                    &amp;sequence.to_be_bytes(),
+                                    &amp;contract_id,
+                                    &amp;topics.get(0).unwrap_or(&amp;vec![]),
+                                    &amp;topics.get(1).unwrap_or(&amp;vec![]),
+                                    &amp;topics.get(2).unwrap_or(&amp;vec![]),
+                                    &amp;topics.get(3).unwrap_or(&amp;vec![]),
+                                    &amp;data,
+                                ],
+                            )
+                            .unwrap()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+<span class="boring">}</span></code></pre></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="hello-ledger-cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="contracts-map.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next" href="contracts-map.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -164,13 +271,10 @@ zephyr and want it to appear here, we'd love for you to open an issue for it <a 
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="hello-ledger-cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="contracts-map.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next" href="contracts-map.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
             </nav>
 
         </div>
