@@ -5,7 +5,6 @@
 
 use anyhow::{Result, anyhow};
 use rs_zephyr_common::ZephyrStatus;
-use wasmtime::Val;
 
 //use sha2::{Digest, Sha256};
 use std::{
