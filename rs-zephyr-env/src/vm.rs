@@ -1,9 +1,9 @@
 //! Structures and implementations for the Zephyr Virtual Machine.
 //!
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::{cell::RefCell, rc::Rc};
-use wasmtime::{Engine, Instance, Linker, Memory, Module, Store};
+use wasmi::{Engine, Instance, Linker, Memory, Module, Store};
 
 use crate::{db::database::ZephyrDatabase, error::HostError, host::Host};
 
@@ -47,40 +47,43 @@ pub struct Vm<DB: ZephyrDatabase> {
 impl<DB: ZephyrDatabase + Clone> Vm<DB> {
     /// Creates and instantiates the VM.
     pub fn new(host: &Host<DB>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
-        let mut config = wasmtime::Config::default();
+        let mut config = wasmi::Config::default();
 
         // TODO: decide which post-mvp features to override.
         // For now we use wasmtime's defaults.
         config.consume_fuel(true);
-
-        let engine = Engine::new(&config)?;
+        
+        let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_module_code_bytes)?;
 
+
         let mut store = Store::new(&engine, host.clone());
-        host.as_budget().infer_fuel(&mut store)?;
+        if let Err(error) = host.as_budget().infer_fuel(&mut store) {
+            return Err(anyhow!(error))
+        };
 
         // TODO: set Store::limiter() once host implements ResourceLimiter
 
         let mut linker = <Linker<Host<DB>>>::new(&engine);
-
+        
         for func_info in host.host_functions(&mut store) {
             linker.define(
-                &mut store,
                 func_info.module,
                 func_info.func,
                 func_info.wrapped,
             )?;
         }
-
+        
         // NOTE
         // We are not starting instance already.
         let instance = linker.instantiate(&mut store, &module)?;
+        let instance  = instance.start(&mut store)?; // handle
         let memory = instance
             .get_export(&mut store, "memory")
             .unwrap()
             .into_memory()
             .unwrap();
-
+        
         let memory_manager = MemoryManager::new(memory, 0);
 
         Ok(Rc::new(Self {

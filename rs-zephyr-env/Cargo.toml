@@ -4,7 +4,8 @@ version = "0.0.1-rc1"
 edition = "2021"
 
 [dependencies]
-wasmtime = "13.0.0"
+wasmi = "0.31.1"
+# wasmtime = "16.0.0"
 anyhow = "1.0.75"
 thiserror = "1.0.48"
 #sha2 = "0.10.7"

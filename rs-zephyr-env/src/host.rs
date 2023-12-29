@@ -3,8 +3,9 @@
 //! between the binary code executed within the VM and
 //! the implementor.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use rs_zephyr_common::ZephyrStatus;
+use wasmtime::Val;
 
 //use sha2::{Digest, Sha256};
 use std::{
@@ -12,7 +13,7 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     rc::Rc,
 };
-use wasmtime::{Caller, Func, Store, Val};
+use wasmi::{Caller, Func, Store, Value};
 
 use crate::{
     budget::Budget,
@@ -52,10 +53,10 @@ pub struct EntryPointInfo {
     pub fname: String,
 
     /// Function parameter types.
-    pub params: Vec<Val>,
+    pub params: Vec<Value>,
 
     /// Function return types.
-    pub retrn: Vec<Val>,
+    pub retrn: Vec<Value>,
 }
 
 /// By default, Zephyr infers a standard entry point:
@@ -257,7 +258,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             (memory, new_offset, contents)
         };
 
-        memory.write(&mut caller, offset, data)?;
+        if let Err(error) = memory.write(&mut caller, offset, data) {
+            return Err(anyhow!(error))
+        }; // todo handle this
 
         Ok((offset as i64, data.len() as i64))
     }
@@ -339,7 +342,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
                         written_vec.push(0)
                     }
 
-                    memory.read(&mut caller, segment.0 as usize, &mut written_vec)?;
+                    if let Err(error) = memory.read(&mut caller, segment.0 as usize, &mut written_vec) {
+                        return Err(anyhow!(error))
+                    };
 
                     written_vec
                 };

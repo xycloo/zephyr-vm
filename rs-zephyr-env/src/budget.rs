@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use std::{cell::RefCell, rc::Rc};
-use wasmtime::Store;
+use wasmi::{Store, errors::FuelError};
 
 use crate::{db::database::ZephyrDatabase, host::Host, ZephyrStandard};
 
@@ -60,7 +60,7 @@ impl ZephyrStandard for Budget {
 
 impl Budget {
     /// Allocates the maximum fuel to the provided store object.
-    pub fn infer_fuel<DB: ZephyrDatabase>(&self, store: &mut Store<Host<DB>>) -> Result<()> {
+    pub fn infer_fuel<DB: ZephyrDatabase>(&self, store: &mut Store<Host<DB>>) -> Result<(), FuelError> {
         store.add_fuel(self.0.borrow().limits.fuel)
     }
 }
