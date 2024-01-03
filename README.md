@@ -55,11 +55,11 @@ we haven't introduced metering yet.
 
 ## Setup
 
-1. Create your zephyr workspace in the shape of a directory (`mkdir zephyr-testing`).
-2. Clone this repo inside the workspace (`cd zephyr-testing; git clone https://github.com/xycloo/zephyr`)
-3. Always inside the workspace clone the examples folder (`https://github.com/xycloo/zephyr-examples`)
-4. cd inside zephyr's CLI crate and build (`cd zephyr/zephyr-cli; cargo build --release; cd ../..`)
-5. cd inside the starter template and create an alias for the zephyr cli (`cd zephyr-examples/zephyr-starter; alias zephyr="../../zephyr/target/release/zephyr-mercury-cli"`)
+1. Create your zephyr workspace in the shape of a directory and cd into it (`mkdir zephyr-testing; cd zephyr-testing`).
+2. Clone this repo (`git clone https://github.com/xycloo/zephyr`).
+3. Always inside the workspace clone the examples folder (`git clone https://github.com/xycloo/zephyr-examples`).
+4. cd inside zephyr's CLI crate and build (`cd zephyr/zephyr-cli; cargo build --release; cd ../..`).
+5. cd inside the starter template and create an alias for the zephyr cli (`cd zephyr-examples/zephyr-starter; alias zephyr="../../zephyr/target/release/zephyr-mercury-cli"`).
 
 You're now all set to start working on the starter template. Now you are ready to visit 
 [the docs](https://zephyr-b8t.pages.dev/) and start testing out Zephyr. 
