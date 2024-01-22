@@ -137,7 +137,9 @@ impl EnvClient {
 }
 
 pub mod scval_utils {
-    use stellar_xdr::next::{ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
+    use stellar_xdr::next::{Int128Parts, ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
+
+    use crate::SdkError;
 
     pub fn to_datakey_u32(int: u32) -> ScVal {
         ScVal::U32(int)
@@ -157,5 +159,13 @@ pub mod scval_utils {
         }
 
         None
+    }
+
+    pub fn to_scval_symbol(from: &str) -> Result<ScVal, SdkError> {
+        Ok(ScVal::Symbol(ScSymbol(from.try_into().map_err(|_| SdkError::Conversion)?)))
+    }
+
+    pub fn parts_to_i128(parts: &Int128Parts) -> i128 {
+        ((parts.hi as i128) << 64) | (parts.lo as i128)
     }
 }
