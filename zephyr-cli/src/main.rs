@@ -4,13 +4,17 @@ use std::io::Read;
 
 use clap::{Parser, Subcommand};
 
-const BACKEND_ENDPOINT: &str = "http://ec2-13-50-173-187.eu-north-1.compute.amazonaws.com:3030";
+const BACKEND_ENDPOINT: &str = "http://172.232.157.194:3030";
+const LOCAL_BACKEND: &str = "http://127.0.0.1:3030";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[arg(short, long)]
     jwt: String,
+
+    #[arg(short, long)]
+    local: Option<bool>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -53,7 +57,11 @@ struct CodeUploadClient {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let client = MercuryClient::new(BACKEND_ENDPOINT.to_string(), cli.jwt);
+    let client = if let Some(true) = cli.local {
+        MercuryClient::new(LOCAL_BACKEND.to_string(), cli.jwt) 
+    } else {
+        MercuryClient::new(BACKEND_ENDPOINT.to_string(), cli.jwt) 
+    };
 
     match cli.command {
         Some(Commands::NewTable { name, columns }) => client.new_table(name, &columns).await?,
