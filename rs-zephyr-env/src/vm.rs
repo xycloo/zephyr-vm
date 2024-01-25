@@ -152,7 +152,7 @@ mod tests {
 
         let vm = Vm::new(&host, code.as_slice()).unwrap();
 
-        host.load_context(Rc::clone(&vm)).unwrap();
+        host.load_context(Rc::downgrade(&vm)).unwrap();
 
         //vm.metered_call(&host).unwrap();
 

@@ -10,7 +10,7 @@ use rs_zephyr_common::ZephyrStatus;
 use std::{
     borrow::BorrowMut,
     cell::{Ref, RefCell, RefMut},
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 use wasmi::{Caller, Func, Store, Value};
 
@@ -201,7 +201,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     }
 
     /// Loads VM context in the host if needed.
-    pub fn load_context(&self, vm: Rc<Vm<DB>>) -> Result<()> {
+    pub fn load_context(&self, vm: Weak<Vm<DB>>) -> Result<()> {
         let mut vm_context = self.0.context.borrow_mut();
 
         vm_context.load_vm(vm)
@@ -244,7 +244,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let host = caller.data();
 
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap(); // todo: make safe
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap(); // todo: make safe
 
             let manager = &vm.memory_manager;
             let memory = manager.memory;
@@ -322,7 +322,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             };
 
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap();
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
             let mem_manager = &vm.memory_manager;
 
             drop(stack);
