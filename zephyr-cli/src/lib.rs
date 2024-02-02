@@ -1,45 +1,31 @@
+use parser::{Column, Table};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 
 use clap::{Parser, Subcommand};
 
-const BACKEND_ENDPOINT: &str = "http://172.232.157.194:3030";
-const LOCAL_BACKEND: &str = "http://127.0.0.1:3030";
+mod parser;
+mod error;
+
+pub use parser::ZephyrProjectParser;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Cli {
+pub struct Cli {
     #[arg(short, long)]
-    jwt: String,
+    pub jwt: String,
 
     #[arg(short, long)]
-    local: Option<bool>,
+    pub local: Option<bool>,
 
     #[command(subcommand)]
-    command: Option<Commands>,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
-enum Commands {
-    NewTable {
-        #[arg(short, long)]
-        name: String,
-
-        #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ' ')]
-        columns: Vec<String>,
-    },
-
-    Deploy {
-        #[arg(short, long)]
-        wasm: String,
-    },
-}
-
-#[derive(Clone, Deserialize, Serialize, Debug)]
-struct Column {
-    name: String,
-    col_type: String,
+pub enum Commands {
+    Deploy
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -53,29 +39,6 @@ struct CodeUploadClient {
     code: Option<Vec<u8>>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-
-    let client = if let Some(true) = cli.local {
-        MercuryClient::new(LOCAL_BACKEND.to_string(), cli.jwt) 
-    } else {
-        MercuryClient::new(BACKEND_ENDPOINT.to_string(), cli.jwt) 
-    };
-
-    match cli.command {
-        Some(Commands::NewTable { name, columns }) => client.new_table(name, &columns).await?,
-
-        Some(Commands::Deploy { wasm }) => client.deploy(wasm).await?,
-
-        None => {
-            println!("--newtable or --deploy");
-        }
-    };
-
-    Ok(())
-}
-
 pub struct MercuryClient {
     pub base_url: String,
     pub jwt: String,
@@ -86,22 +49,22 @@ impl MercuryClient {
         Self { base_url, jwt }
     }
 
-    async fn new_table(
+    pub async fn new_table(
         &self,
-        name: String,
-        columns: &[String],
+        table: Table,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let columns = table.columns;
         let mut cols = Vec::new();
 
         for col in columns {
             cols.push(Column {
-                name: col.to_string(),
-                col_type: "BYTEA".to_string(),
+                name: col.name.to_string(),
+                col_type: col.col_type.to_string(),
             });
         }
 
         let code = NewZephyrTableClient {
-            table: Some(name),
+            table: Some(table.name),
             columns: Some(cols),
         };
 
@@ -144,6 +107,7 @@ impl MercuryClient {
 
     pub async fn deploy(&self, wasm: String) -> Result<(), Box<dyn std::error::Error>> {
         // Replace "input.wasm" with the path to your Wasm file.
+        println!("Reading wasm {}", wasm);
         let mut input_file = File::open(wasm)?;
 
         let mut buffer = Vec::new();

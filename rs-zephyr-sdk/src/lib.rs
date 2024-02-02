@@ -3,9 +3,9 @@ mod ledger_meta;
 mod symbol;
 
 pub use database::{TableRow, TableRows};
+pub use ledger_meta::MetaReader;
 
 use database::Database;
-use ledger_meta::MetaReader;
 use rs_zephyr_common::ZephyrStatus;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -45,7 +45,7 @@ extern "C" {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Copy, Error)]
 pub enum SdkError {
     #[error("Conversion error.")]
     Conversion,
@@ -94,9 +94,9 @@ impl TypeWrap {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EnvClient {
-    xdr: Option<stellar_xdr::next::LedgerCloseMeta>,
+    xdr: stellar_xdr::next::LedgerCloseMeta,
 }
 
 // Note: some methods take self as param though it's not needed yet.
@@ -109,30 +109,26 @@ impl EnvClient {
         Database::read_table(table_name, columns)
     }
 
-    pub fn reader(&mut self) -> MetaReader {
-        let meta = Self::last_ledger_meta_xdr(self);
+    pub fn reader(&self) -> MetaReader {
+        let meta = &self.xdr;
 
         MetaReader::new(meta)
     }
 
-    pub fn last_ledger_meta_xdr(&mut self) -> &stellar_xdr::next::LedgerCloseMeta {
-        if self.xdr.is_none() {
-            let (offset, size) = unsafe { read_ledger_meta() };
+    pub fn new() -> Self {
+        let (offset, size) = unsafe { read_ledger_meta() };
 
-            let ledger_meta = {
-                let memory = 0 as *const u8;
-                let slice = unsafe {
-                    let start = memory.offset(offset as isize);
-                    core::slice::from_raw_parts(start, size as usize)
-                };
-
-                stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap()
+        let ledger_meta = {
+            let memory = 0 as *const u8;
+            let slice = unsafe {
+                let start = memory.offset(offset as isize);
+                core::slice::from_raw_parts(start, size as usize)
             };
 
-            self.xdr = Some(ledger_meta);
-        }
+            stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap()
+        };
 
-        self.xdr.as_ref().unwrap()
+        Self { xdr: ledger_meta }
     }
 }
 
