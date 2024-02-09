@@ -14,6 +14,10 @@ use thiserror::Error;
 
 pub use ledger_meta::EntryChanges;
 pub use stellar_xdr;
+pub use database::Condition;
+pub use rs_zephyr_common::ZephyrVal;
+pub use bincode;
+
 
 fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
@@ -30,6 +34,10 @@ extern "C" {
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "write_raw"]
     fn write_raw() -> i64;
+
+    #[allow(improper_ctypes)] // we alllow as we enabled multi-value
+    #[link_name = "update_raw"]
+    fn update_raw() -> i64;
 
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_ledger_meta"]
@@ -101,8 +109,24 @@ pub struct EnvClient {
 
 // Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
+    pub fn read<T: DatabaseInteract>(&self) -> Vec<T> {
+        T::read_to_rows(&self)
+    }
+
+    pub fn put<T: DatabaseInteract>(&self, row: &T) {
+        row.put(&self)
+    }
+
+    pub fn update<T: DatabaseInteract>(&self, row: &T, conditions: &[Condition]) {
+        row.update(&self, conditions)
+    }
+
     pub fn db_write(&self, table_name: &str, columns: &[&str], segments: &[&[u8]]) -> Result<(), SdkError> {
         Database::write_table(table_name, columns, segments)
+    }
+
+    pub fn db_update(&self, table_name: &str, columns: &[&str], segments: &[&[u8]], conditions: &[Condition]) -> Result<(), SdkError> {
+        Database::update_table(table_name, columns, segments, conditions)
     }
 
     pub fn db_read(&self, table_name: &str, columns: &[&str]) -> Result<TableRows, SdkError> {
@@ -132,7 +156,7 @@ impl EnvClient {
     }
 }
 
-pub mod scval_utils {
+pub mod utils {
     use stellar_xdr::next::{Int128Parts, ScMapEntry, ScSymbol, ScVal, ScVec, VecM};
 
     use crate::SdkError;
@@ -164,4 +188,18 @@ pub mod scval_utils {
     pub fn parts_to_i128(parts: &Int128Parts) -> i128 {
         ((parts.hi as i128) << 64) | (parts.lo as i128)
     }
+
+    pub fn to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+        v.try_into()
+            .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+    }
+}
+
+
+pub trait DatabaseInteract {
+    fn read_to_rows(env: &EnvClient) -> Vec<Self> where Self: Sized;
+
+    fn put(&self, env: &EnvClient);
+
+    fn update(&self, env: &EnvClient, conditions: &[Condition]);
 }

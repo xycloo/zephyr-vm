@@ -25,7 +25,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Deploy
+    Deploy {
+        #[arg(short, long)]
+        target: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug)]

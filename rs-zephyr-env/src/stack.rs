@@ -8,7 +8,10 @@ use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 
 /// Stack implementation.
 #[derive(Clone)]
-pub struct StackImpl(pub RefCell<Vec<i64>>);
+pub struct StackImpl {
+    pub inner: RefCell<Vec<i64>>,
+    step: RefCell<usize>
+}
 
 /// Stack implementation wrapper.
 #[derive(Clone)]
@@ -16,31 +19,49 @@ pub struct Stack(pub Rc<StackImpl>);
 
 impl ZephyrStandard for StackImpl {
     fn zephyr_standard() -> Result<Self> {
-        Ok(Self(RefCell::new(Vec::new())))
+        Ok(Self {
+            inner: RefCell::new(Vec::new()),
+            step: RefCell::new(0)
+        })
     }
 }
 
 impl StackImpl {
     /// Pushes a value to the stack.
     pub fn push(&self, val: i64) {
-        let mut stack = self.0.borrow_mut();
+        let mut stack = self.inner.borrow_mut();
         stack.borrow_mut().push(val);
     }
 
     /// Clear the stack.
     pub fn clear(&self) {
-        let mut stack = self.0.borrow_mut();
+        let mut stack = self.inner.borrow_mut();
+        *self.step.borrow_mut() = 0;
         stack.borrow_mut().clear();
     }
 
     /// Load a mutable reference to the stack.
     pub fn load_host(&self) -> &RefCell<Vec<i64>> {
-        &self.0
+        &self.inner
     }
 
     /// Load the cloned stack.
     pub fn load(&self) -> Vec<i64> {
-        self.0.borrow().clone()
+        self.inner.borrow().clone()
+    }
+
+    /// Reads the current value on stack and increments
+    /// the count.
+    pub fn get_with_step(&self) -> Option<i64> {
+        let current = self.step.clone().into_inner();
+        *self.step.borrow_mut() = current + 1;
+
+        self.inner.borrow().get(current).copied()
+    }
+
+    /// Returns the current count.
+    pub fn get_current_step(&self) -> usize {
+        self.step.clone().into_inner()
     }
 }
 

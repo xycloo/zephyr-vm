@@ -1,8 +1,9 @@
 use crate::{
-    db::{database::ZephyrDatabase, error::DatabaseError},
+    db::database::ZephyrDatabase,
     ZephyrMock, ZephyrStandard,
 };
 use anyhow::Result;
+use rs_zephyr_common::DatabaseError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -76,10 +77,20 @@ impl ZephyrDatabase for MercuryDatabase {
         write_data: &[i64],
         written: Vec<Vec<u8>>,
     ) -> Result<(), DatabaseError> {
-        println!("{:?}", write_data);
-        println!("{:?}", written);
         Ok(())
     }
+
+    fn update_raw(
+            &self,
+            user_id: i64,
+            written_point_hash: [u8; 16],
+            write_data: &[i64],
+            written: Vec<Vec<u8>>,
+            condition: &[crate::db::database::WhereCond],
+            condition_args: Vec<Vec<u8>>
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
 }
 
 impl ZephyrStandard for MercuryDatabase {

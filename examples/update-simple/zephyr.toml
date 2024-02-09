@@ -1,0 +1,12 @@
+name = "update-simple"
+
+[[tables]]
+name = "myledger"
+
+[[tables.columns]]
+name = "current"
+col_type = "BYTEA"
+
+[[tables.columns]]
+name = "previous"
+col_type = "BYTEA"

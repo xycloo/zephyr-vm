@@ -1,5 +1,5 @@
 use rs_zephyr_sdk::{EntryChanges, EnvClient};
-use stellar_xdr::next::{LedgerEntry, LedgerEntryData, ScSymbol, ScVal, ScVec, VecM};
+use stellar_xdr::next::{ContractDataDurability, Hash, LedgerEntry, LedgerEntryData, LedgerKey, LedgerKeyContractData, LedgerKeyTtl, Limits, ReadXdr, ScAddress, ScSymbol, ScVal, ScVec, VecM, WriteXdr};
 
 const XYCLOANS_CONTRACT: [u8; 32] = [
     228, 86, 123, 16, 235, 194, 45, 195, 51, 232, 164, 150, 178, 46, 102, 251, 216, 147, 78, 42,
@@ -40,7 +40,7 @@ fn write_step(state_entry: LedgerEntry, idx: usize, step: &mut [Option<i128>; 2]
 pub extern "C" fn on_close() {
     let mut step: [Option<i128>; 2] = [None; 2];
 
-    let mut env = EnvClient::default();
+    let mut env = EnvClient::new();
     let reader = env.reader();
 
     let sequence = reader.ledger_sequence();

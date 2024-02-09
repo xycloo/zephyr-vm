@@ -82,9 +82,13 @@ impl ZephyrProjectParser {
         Ok(())
     }
 
-    pub async fn deploy_wasm(&self) -> Result<()> {
+    pub async fn deploy_wasm(&self, target: Option<String>) -> Result<()> {
         let project_name = &self.config.name;
-        let path = format!("./target/wasm32-unknown-unknown/release/{}.wasm", project_name.replace('-', "_"));
+        let path = if let Some(target_dir) = target {
+            format!("{}/{}.wasm", target_dir, project_name.replace('-', "_"))
+        } else {
+            format!("./target/wasm32-unknown-unknown/release/{}.wasm", project_name.replace('-', "_"))
+        };
         
         if let Err(_) = self.client.deploy(path).await {
             return Err(ParserError::WasmDeploymentError.into());

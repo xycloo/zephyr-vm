@@ -66,6 +66,43 @@ impl<'a> MetaReader<'a> {
         }
     }
 
+    pub fn envelopes_with_meta(&self) -> Vec<(&TransactionEnvelope, &TransactionResultMeta)> {
+        let mut composed = Vec::new();
+        
+        match &self.0 {
+            LedgerCloseMeta::V0(v0) => (),
+            LedgerCloseMeta::V1(v1) => {
+                let phases = match &v1.tx_set {
+                    GeneralizedTransactionSet::V1(v1) => &v1.phases,
+                };
+
+                for phase in phases.iter() {
+                    match phase {
+                        TransactionPhase::V0(v0) => {
+                            for txset_component in v0.iter() {
+                                match txset_component {
+                                    TxSetComponent::TxsetCompTxsMaybeDiscountedFee(
+                                        txset_maybe_discounted_fee,
+                                    ) => {
+                                        for (idx, tx_envelope) in txset_maybe_discounted_fee.txs.iter().enumerate() {
+                                            let txmeta = &v1.tx_processing[idx];
+                                            
+                                            composed.push((tx_envelope, txmeta))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+        };
+
+        composed
+    }
+
+
     pub fn tx_processing(&self) -> Vec<TransactionResultMeta> {
         match &self.0 {
             LedgerCloseMeta::V1(v1) => {

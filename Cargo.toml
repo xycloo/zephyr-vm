@@ -6,7 +6,9 @@ members = [
     "rs-zephyr-common",
     "examples/simple",
     "examples/read-simple",
+    "examples/update-simple",
     "zephyr-cli",
+    "macros"
 ]
 
 

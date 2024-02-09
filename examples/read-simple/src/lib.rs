@@ -2,7 +2,7 @@ use rs_zephyr_sdk::EnvClient;
 
 #[no_mangle]
 pub extern "C" fn on_close() {
-    let env = EnvClient::default();
+    let env = EnvClient::new();
     
     env.db_write("test", &["price", "asset"], &[&3_i32.to_be_bytes(), &[0; 32]]).unwrap();
 

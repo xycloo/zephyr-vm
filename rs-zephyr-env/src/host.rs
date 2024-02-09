@@ -4,7 +4,7 @@
 //! the implementor.
 
 use anyhow::{Result, anyhow};
-use rs_zephyr_common::ZephyrStatus;
+use rs_zephyr_common::{DatabaseError, ZephyrStatus};
 
 //use sha2::{Digest, Sha256};
 use std::{
@@ -12,13 +12,12 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     rc::{Rc, Weak},
 };
-use wasmi::{Caller, Func, Store, Value};
+use wasmi::{Caller, Func, Memory, Store, Value};
 
 use crate::{
     budget::Budget,
     db::{
-        database::{Database, DatabasePermissions, ZephyrDatabase},
-        error::DatabaseError,
+        database::{Database, DatabasePermissions, WhereCond, ZephyrDatabase},
         shield::ShieldedStore,
     },
     error::HostError,
@@ -271,88 +270,55 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     fn write_database_raw(mut caller: Caller<Self>) -> Result<()> {
         let (memory, write_point_hash, columns, segments) = {
             let host = caller.data();
-
-            let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0 .0.borrow_mut();
+            let stack_impl = host.as_stack_mut();
 
             let id = {
                 let value = host.get_host_id();
                 byte_utils::i64_to_bytes(value)
             };
 
-            // insert into point (columns...) values (from memory)
-
             let write_point_hash: [u8; 16] = {
-                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
-                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
-
+                let point_raw = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                let point_bytes = byte_utils::i64_to_bytes(point_raw);
                 md5::compute([point_bytes, id].concat()).into()
             };
 
             let columns = {
-                let columns_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                let columns_size_idx = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
                 let mut columns: Vec<i64> = Vec::new();
-
-                for idx in 2..columns_size_idx {
-                    columns.push(*stack.get(idx as usize).ok_or(HostError::NoValOnStack)?);
+                for _ in 0..columns_size_idx as usize {
+                    columns.push(stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?);
                 }
-
                 columns
             };
 
             let data_segments = {
                 let mut segments: Vec<(i64, i64)> = Vec::new();
-                let mut start = 2 + columns.len();
-
                 let data_segments_size_idx = {
-                    let non_fixed = stack.get(start).ok_or(HostError::NoValOnStack)?;
-
-                    (*non_fixed * 2) as usize + start
+                    let non_fixed = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    (non_fixed * 2) as usize
                 };
-
-                start += 1;
-
-                for idx in (start..data_segments_size_idx).step_by(2) {
-                    let offset = *stack.get(idx as usize).ok_or(HostError::NoValOnStack)?;
-                    let size = *stack.get(idx + 1).ok_or(HostError::NoValOnStack)?;
+                for _ in (0..data_segments_size_idx).step_by(2) {
+                    let offset = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    let size = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
                     segments.push((offset, size))
                 }
-
                 segments
             };
 
             let context = host.0.context.borrow();
             let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
             let mem_manager = &vm.memory_manager;
-
-            drop(stack);
-            stack_obj.0.clear();
+            stack_impl.0.clear();
 
             (mem_manager.memory, write_point_hash, columns, data_segments)
         };
 
-        let aggregated_data = {
-            let mut aggregated = Vec::new();
+        let aggregated_data = segments
+            .iter()
+            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .collect::<Result<Vec<_>, _>>()?;
 
-            for segment in segments {
-                let data = {
-                    let mut written_vec = Vec::new();
-                    for _ in 0..segment.1 {
-                        written_vec.push(0)
-                    }
-
-                    if let Err(error) = memory.read(&mut caller, segment.0 as usize, &mut written_vec) {
-                        return Err(anyhow!(error))
-                    };
-
-                    written_vec
-                };
-
-                aggregated.push(data);
-            }
-
-            aggregated
-        };
 
         let host = caller.data();
         let db_obj = host.0.database.borrow();
@@ -372,6 +338,124 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Ok(())
     }
 
+    fn update_database_raw(mut caller: Caller<Self>) -> Result<()> {
+        let (memory, write_point_hash, columns, segments, conditions, conditions_args) = {
+            let host = caller.data();
+
+            let stack_impl = host.as_stack_mut();
+
+            let id = {
+                let value = host.get_host_id();
+                byte_utils::i64_to_bytes(value)
+            };
+
+            let write_point_hash: [u8; 16] = {
+                let point_raw = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                let point_bytes = byte_utils::i64_to_bytes(point_raw);
+                md5::compute([point_bytes, id].concat()).into()
+            };
+
+            let columns = {
+                let columns_size_idx = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                let mut columns: Vec<i64> = Vec::new();
+
+                for _ in 0..columns_size_idx as usize {
+                    columns.push(stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?);
+                }
+
+                columns
+            };
+
+            let data_segments = {
+                let mut segments: Vec<(i64, i64)> = Vec::new();
+
+                let data_segments_size_idx = {
+                    let non_fixed = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    (non_fixed * 2) as usize
+                };
+
+                for _ in (0..data_segments_size_idx).step_by(2) {
+                    let offset = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    let size = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    segments.push((offset, size))
+                }
+                segments
+            };
+
+            let conditions = {
+                let mut conditions = Vec::new();
+
+                let conditions_length = {
+                    let non_fixed = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    (non_fixed * 2) as usize
+                };
+
+                for _ in (0..conditions_length).step_by(2) {
+                    let column = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;    
+                    let operator = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;                    
+                    conditions.push(WhereCond::from_column_and_operator(column, operator)?);
+                }
+
+                conditions
+            };
+
+            let conditions_args = {
+                let mut segments = Vec::new();
+
+                let args_length = {
+                    let non_fixed = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    (non_fixed * 2) as usize
+                };
+
+                for _ in (0..args_length).step_by(2) {
+                    let offset = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    let size = stack_impl.0.get_with_step().ok_or(HostError::NoValOnStack)?;
+                    segments.push((offset, size))
+                }
+
+                segments
+            };
+
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let mem_manager = &vm.memory_manager;
+
+            stack_impl.0.clear();
+
+            (mem_manager.memory, write_point_hash, columns, data_segments, conditions, conditions_args)
+        };
+
+        let aggregated_data = segments
+            .iter()
+            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let aggregated_conditions_args = conditions_args
+            .iter()
+            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .collect::<Result<Vec<_>, _>>()?;
+
+
+        let host = caller.data();
+        let db_obj = host.0.database.borrow();
+        let db_impl = db_obj.0.borrow();
+
+        if let DatabasePermissions::ReadOnly = db_impl.permissions {
+            return Err(DatabaseError::WriteOnReadOnly.into());
+        }
+
+        db_impl.db.update_raw(
+            host.get_host_id(),
+            write_point_hash,
+            &columns,
+            aggregated_data,
+            &conditions,
+            aggregated_conditions_args
+        )?;
+
+        Ok(())
+    }
+
     fn read_database_raw(caller: Caller<Self>) -> Result<(i64, i64)> {
         let host = caller.data();
 
@@ -379,7 +463,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
             let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0 .0.borrow_mut();
+            let stack = stack_obj.0.inner.borrow_mut();
 
             if let DatabasePermissions::WriteOnly = db_impl.permissions {
                 return Err(DatabaseError::ReadOnWriteOnly.into());
@@ -432,6 +516,8 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     /// - Database read: retrieves instructions for the data to be read by the module
     /// and calls the [`DB::read_raw()`] function. Reading from the database is streamlined
     /// to the [`DB`] implementation.
+    /// - Database update: Retrieves and structures instructions and data used by the [`DB`]
+    /// implementation to update a table.  
     /// - Log function: takes an integer from the module and logs it in the host.
     /// - Stack push function: pushes an integer from the module to the host's pseudo
     /// stack. This is currently the means of communication for unbound intructions between
@@ -439,21 +525,14 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
     /// writes it to the module's memory. Returns the offset and the size of the bytes
     /// written in the binary's memory.
-    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 5] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 6] {
         let mut store = store;
 
         let db_write_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 let result = Self::write_database_raw(caller);
                 let res = if result.is_err() {
-                    match result.err().unwrap().downcast_ref() {
-                        Some(DatabaseError::WriteError) => ZephyrStatus::DbWriteError as i64,
-                        Some(DatabaseError::ZephyrQueryError) => ZephyrStatus::DbReadError as i64,
-                        Some(DatabaseError::ZephyrQueryMalformed) => ZephyrStatus::DbReadError as i64,
-                        Some(DatabaseError::ReadOnWriteOnly) => ZephyrStatus::HostConfiguration as i64,
-                        Some(DatabaseError::WriteOnReadOnly) => ZephyrStatus::HostConfiguration as i64,
-                        None => ZephyrStatus::Unknown as i64
-                    } 
+                    ZephyrStatus::from(result.err().unwrap()) as i64
                 } else {
                     ZephyrStatus::Success as i64
                 };
@@ -468,20 +547,32 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             }
         };
 
+        let db_update_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
+                let result = Self::update_database_raw(caller);
+                let res = if result.is_err() {
+                    ZephyrStatus::from(result.err().unwrap()) as i64
+                } else {
+                    ZephyrStatus::Success as i64
+                };
+
+                res
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "update_raw",
+                wrapped,
+            }
+        };
+
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
                 let result = Host::read_database_raw(caller);
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res.0, res.1)
                 } else {
-                    match result.err().unwrap().downcast_ref() {
-                        Some(DatabaseError::WriteError) => (ZephyrStatus::DbWriteError as i64, 0, 0),
-                        Some(DatabaseError::ZephyrQueryError) => (ZephyrStatus::DbReadError as i64, 0, 0),
-                        Some(DatabaseError::ZephyrQueryMalformed) => (ZephyrStatus::DbReadError as i64, 0, 0),
-                        Some(DatabaseError::ReadOnWriteOnly) => (ZephyrStatus::HostConfiguration as i64, 0, 0),
-                        Some(DatabaseError::WriteOnReadOnly) => (ZephyrStatus::HostConfiguration as i64, 0, 0),
-                        None => (ZephyrStatus::Unknown as i64, 0, 0)
-                    }
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
                 }
             });
 
@@ -546,9 +637,19 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         [
             db_write_fn,
             db_read_fn,
+            db_update_fn,
             log_fn,
             stack_push_fn,
             read_ledger_meta_fn,
         ]
+    }
+    
+    fn read_segment_from_memory(memory: &Memory, caller: &mut Caller<Self>, segment: (i64, i64)) -> Result<Vec<u8>> {
+        let mut written_vec = vec![0; segment.1 as usize];
+        if let Err(error) = memory.read(caller, segment.0 as usize, &mut written_vec) {
+            return Err(anyhow!(error));
+        }
+        
+        Ok(written_vec)
     }
 }
