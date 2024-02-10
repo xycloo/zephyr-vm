@@ -1,5 +1,5 @@
 use macros::DatabaseInteract;
-use rs_zephyr_sdk::{bincode, Condition, DatabaseInteract, EnvClient, ZephyrVal};
+use rs_zephyr_sdk::{Condition, DatabaseInteract, EnvClient};
 use serde::{Deserialize, Serialize};
 
 

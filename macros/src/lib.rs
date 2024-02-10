@@ -31,7 +31,7 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
         } 
     }).expect("No with_name attribute");
 
-    let idents: Vec<(Ident, usize)> = match input.data {
+    let idents: Vec<(Ident, usize, Ident)> = match input.data {
         syn::Data::Struct(s) => match s.fields {
             syn::Fields::Named(FieldsNamed { named, .. }) => {
                 named.iter().enumerate().map(|(idx, field)| {
@@ -39,7 +39,7 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
                         panic!("unsupported field type")
                     };
 
-                    (field.ident.clone().unwrap(), idx)
+                    (field.ident.clone().unwrap(), idx, path.path.segments[0].ident.clone())
 
                 }).collect()
             }
@@ -56,36 +56,66 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
         })
         .collect();
 
+    macro_rules! check_type {
+        ($t:expr, $($expected:literal),*) => {
+            matches!($t, $($expected)|*)
+        };
+    }
     
-    let construction_code = idents.iter().map(|(ident, _)| {
-        quote! {
-            #ident: #ident.try_into().unwrap(),
+    let construction_code = idents.iter().map(|(ident, _, field_type)| {
+        if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
+            quote! {
+                #ident: #ident.try_into().unwrap(),
+            }
+        } else {
+            quote! {
+                #ident,
+            }
         }
     });
 
-    let deser_code = idents.iter().map(|(ident, index)| {
-        quote! {
-            let bytes = row.row.get(#index).unwrap();
-            let #ident = bincode::deserialize::<ZephyrVal>(&bytes.0).unwrap();
-            
+    let deser_code = idents.iter().map(|(ident, index, field_type)| {
+        if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
+            quote! {
+                let bytes = row.row.get(#index).unwrap();
+                let #ident = bincode::deserialize::<ZephyrVal>(&bytes.0).unwrap();
+            }
+        } else {
+            quote! {
+                let bytes = row.row.get(#index).unwrap();
+                let #ident = bincode::deserialize(&bytes.0).unwrap();
+                
+            }
         }
     });
 
-    let serialize_type = idents.iter().map(|(ident, _)| {
-        quote! {
-            bincode::serialize::<ZephyrVal>(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+    let serialize_type = idents.iter().map(|(ident, _, field_type)| {
+        if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
+            quote! {
+                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+            }
+        } else {
+            quote! {
+                bincode::serialize(&self.#ident).unwrap().as_slice()
+            }
         }
     });
 
-    let serialize_type_update = idents.iter().map(|(ident, _)| {
-        quote! {
-            bincode::serialize::<ZephyrVal>(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+    let serialize_type_update = idents.iter().map(|(ident, _, field_type)| {
+        if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
+            quote! {
+                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+            }
+        } else {
+            quote! {
+                bincode::serialize(&self.#ident).unwrap().as_slice()
+            }
         }
     });
 
     // Generate the implementation of the trait
     let expanded = quote! {
-        //use rs_zephyr_sdk::{bincode, ZephyrVal};
+        use rs_zephyr_sdk::{bincode, ZephyrVal};
         use std::convert::TryInto;
 
         impl DatabaseInteract for #struct_name {
@@ -118,3 +148,4 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
     // Return the generated implementation
     TokenStream::from(expanded)
 }
+

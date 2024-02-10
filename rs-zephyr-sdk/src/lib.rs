@@ -17,6 +17,7 @@ pub use stellar_xdr;
 pub use database::Condition;
 pub use rs_zephyr_common::ZephyrVal;
 pub use bincode;
+pub use macros::DatabaseInteract as DatabaseDerive;
 
 
 fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
