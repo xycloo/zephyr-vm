@@ -15,18 +15,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match cli.command {
-        Some(Commands::Deploy {target}) => {
-            println!("Parsing project configuration ...");
-            let parser = ZephyrProjectParser::from_path(client, "./zephyr.toml").unwrap();
-            println!("Building binary ...");
-            parser.build_wasm().unwrap();
-            println!("Deploying tables ...");
-            parser.deploy_tables().await.unwrap();
-            
-            println!("Deploying wasm ...");
-            parser.deploy_wasm(target).await.unwrap();
+        Some(Commands::Deploy {target, old_api}) => {
+            if let Some(true) = old_api {
+                println!("Deploying wasm ...");
+                client.deploy(target.unwrap()).await.unwrap();
+                println!("Successfully deployed Zephyr program.");
+            } else {
+                println!("Parsing project configuration ...");
+                let parser = ZephyrProjectParser::from_path(client, "./zephyr.toml").unwrap();
+                println!("Building binary ...");
+                parser.build_wasm().unwrap();
+                println!("Deploying tables ...");
+                parser.deploy_tables().await.unwrap();
+                
+                println!("Deploying wasm ...");
+                parser.deploy_wasm(target).await.unwrap();
 
-            println!("Successfully deployed Zephyr program.");
+                println!("Successfully deployed Zephyr program.");
+            }
         },
 
         None => {

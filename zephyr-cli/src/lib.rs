@@ -28,6 +28,9 @@ pub enum Commands {
     Deploy {
         #[arg(short, long)]
         target: Option<String>,
+
+        #[arg(short, long)]
+        old_api: Option<bool>,
     },
 }
 
