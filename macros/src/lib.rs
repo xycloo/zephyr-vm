@@ -115,9 +115,6 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
 
     // Generate the implementation of the trait
     let expanded = quote! {
-        use rs_zephyr_sdk::{bincode, ZephyrVal};
-        use std::convert::TryInto;
-
         impl DatabaseInteract for #struct_name {
             fn read_to_rows(env: &EnvClient) -> Vec<Self> where Self: Sized {
                 let rows = env.db_read(&#with_name_attr, &[#(#field_literals),*]).unwrap();
