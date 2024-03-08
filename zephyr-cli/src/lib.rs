@@ -19,6 +19,9 @@ pub struct Cli {
     #[arg(short, long)]
     pub local: Option<bool>,
 
+    #[arg(short, long)]
+    pub mainnet: Option<bool>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

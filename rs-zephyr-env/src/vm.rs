@@ -3,7 +3,7 @@
 
 use anyhow::{Result, anyhow};
 use std::{cell::RefCell, rc::Rc};
-use wasmi::{Engine, Instance, Linker, Memory, Module, Store};
+use wasmi::{core::Pages, Engine, Instance, Linker, Memory, Module, Store};
 
 use crate::{db::database::ZephyrDatabase, error::HostError, host::Host};
 
@@ -128,8 +128,12 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::read;
+    use std::fs::{read, read_to_string, File};
+    use std::io::{self, BufRead};
     use std::rc::Rc;
+
+    use stellar_xdr::curr::{Limits, LedgerCloseMeta, ReadXdr, WriteXdr};
+    
 
     use crate::{host::Host, testutils::database::MercuryDatabase, ZephyrMock};
 
@@ -144,9 +148,35 @@ mod tests {
 
     #[test]
     fn alloc_invocation() {
-        let code = { read("/Users/tommasodeponti/Desktop/projects/master/zephyr-examples/zephyr-track-all-sac/target/wasm32-unknown-unknown/release/zephyr_track_all_sac.wasm").unwrap() };
-
-        let host = Host::<MercuryDatabase>::mocked().unwrap();
+        let code = { read("/mnt/storagehdd/projects/master/zephyr-examples/zephyr-hello-ledger/target/wasm32-unknown-unknown/release/zephyr_hello_ledger.wasm").unwrap() };
+        
+        let mainnet_ledger = { 
+            let file = File::open("/home/tommasodeponti/Desktop/mainnet-ledger.txt").unwrap();
+            let reader = io::BufReader::new(file);
+        
+            // Read the file line by line
+            let mut numbers = Vec::new();
+            for line in reader.lines() {
+                // Parse each line into numbers separated by whitespace
+                let line = line.unwrap();
+                for num_str in line.split_whitespace() {
+                    let num_str = num_str.replace(',', "");
+                    let num_str = num_str.replace('[', "");
+                    let num_str = num_str.replace(']', "");
+                    // Parse each number as u8 and push it into the Vec<u8>
+                    if let Ok(num) = num_str.parse::<u8>() {
+                        numbers.push(num);
+                    } else {
+                        eprintln!("Error parsing number: {}", num_str);
+                    }
+                }
+            }
+            numbers
+        //    read_to_string("/home/tommasodeponti/Desktop/mainnet-ledger.txt").unwrap() 
+        };
+       
+        let mut host = Host::<MercuryDatabase>::mocked().unwrap();
+        host.add_ledger_close_meta(mainnet_ledger).unwrap();
 
         let start = std::time::Instant::now();
 
@@ -154,7 +184,7 @@ mod tests {
 
         host.load_context(Rc::downgrade(&vm)).unwrap();
 
-        //vm.metered_call(&host).unwrap();
+        vm.metered_call(&host).unwrap();
 
         println!("elapsed {:?}", start.elapsed());
     }

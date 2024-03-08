@@ -92,7 +92,7 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
     let serialize_type = idents.iter().map(|(ident, _, field_type)| {
         if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
             quote! {
-                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident.clone()).unwrap()).unwrap().as_slice()
             }
         } else {
             quote! {
@@ -104,7 +104,7 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
     let serialize_type_update = idents.iter().map(|(ident, _, field_type)| {
         if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
             quote! {
-                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident).unwrap()).unwrap().as_slice()
+                bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident.clone()).unwrap()).unwrap().as_slice()
             }
         } else {
             quote! {
@@ -115,8 +115,8 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
 
     // Generate the implementation of the trait
     let expanded = quote! {
-        use rs_zephyr_sdk::{bincode, ZephyrVal};
-        use std::convert::TryInto;
+        //use rs_zephyr_sdk::{bincode, ZephyrVal};
+        //use std::convert::TryInto;
 
         impl DatabaseInteract for #struct_name {
             fn read_to_rows(env: &EnvClient) -> Vec<Self> where Self: Sized {

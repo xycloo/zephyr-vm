@@ -12,7 +12,7 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     rc::{Rc, Weak},
 };
-use wasmi::{Caller, Func, Memory, Store, Value};
+use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
 use crate::{
     budget::Budget,
@@ -22,7 +22,7 @@ use crate::{
     },
     error::HostError,
     stack::Stack,
-    vm::Vm,
+    vm::{MemoryManager, Vm},
     vm_context::VmContext,
     ZephyrMock, ZephyrStandard,
 };
@@ -255,6 +255,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
             (memory, new_offset, contents)
         };
+
+        // TODO: this should actually only grow the linear memory when needed, so check the current
+        // pages and the size of the contents to compute a safe pages size (else error with a growth error).
+        // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
+        memory.grow(&mut caller, Pages::new(2000).unwrap());
 
         if let Err(error) = memory.write(&mut caller, offset, data) {
             return Err(anyhow!(error))

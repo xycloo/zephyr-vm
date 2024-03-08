@@ -2,6 +2,7 @@ use clap::Parser;
 use zephyr_mercury_cli::{Cli, Commands, MercuryClient, ZephyrProjectParser};
 
 const BACKEND_ENDPOINT: &str = "https://api.mercurydata.app:8443";
+const MAINNET_BACKEND_ENDPOINT: &str = "https://mainnet.mercurydata.app:8443";
 const LOCAL_BACKEND: &str = "http://127.0.0.1:8443";
 
 #[tokio::main]
@@ -11,7 +12,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = if let Some(true) = cli.local {
         MercuryClient::new(LOCAL_BACKEND.to_string(), cli.jwt) 
     } else {
-        MercuryClient::new(BACKEND_ENDPOINT.to_string(), cli.jwt) 
+        if let Some(true) = cli.mainnet {
+            MercuryClient::new(MAINNET_BACKEND_ENDPOINT.to_string(), cli.jwt) 
+        } else {
+            MercuryClient::new(BACKEND_ENDPOINT.to_string(), cli.jwt) 
+        }
     };
 
     match cli.command {
