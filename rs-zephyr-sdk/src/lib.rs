@@ -105,7 +105,7 @@ impl TypeWrap {
 
 #[derive(Clone)]
 pub struct EnvClient {
-    xdr: stellar_xdr::next::LedgerCloseMeta,
+    pub xdr: stellar_xdr::next::LedgerCloseMeta,
 }
 
 // Note: some methods take self as param though it's not needed yet.

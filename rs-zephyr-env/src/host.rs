@@ -259,8 +259,9 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         // TODO: this should actually only grow the linear memory when needed, so check the current
         // pages and the size of the contents to compute a safe pages size (else error with a growth error).
         // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
-        memory.grow(&mut caller, Pages::new(20000).unwrap());
+        memory.grow(&mut caller, Pages::new(2000).unwrap());
 
+        println!("{} {}", offset, data.len());
         if let Err(error) = memory.write(&mut caller, offset, data) {
             return Err(anyhow!(error))
         }; // todo handle this
