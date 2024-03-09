@@ -8,9 +8,7 @@ use rs_zephyr_common::{DatabaseError, ZephyrStatus};
 
 //use sha2::{Digest, Sha256};
 use std::{
-    borrow::BorrowMut,
-    cell::{Ref, RefCell, RefMut},
-    rc::{Rc, Weak},
+    borrow::BorrowMut, cell::{Ref, RefCell, RefMut}, fs::write, rc::{Rc, Weak}
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
@@ -263,6 +261,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         println!("{} {}", offset, data.len());
         if let Err(error) = memory.write(&mut caller, offset, data) {
+            write("failed_meta.txt", contents).unwrap();
             return Err(anyhow!(error))
         }; // todo handle this
 
