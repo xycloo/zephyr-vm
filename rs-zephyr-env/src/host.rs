@@ -265,6 +265,8 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
             return Err(anyhow!(error))
         }; // todo handle this
 
+        println!("\n\n SUCCESS WRITING MEM");
+
         Ok((offset as i64, data.len() as i64))
     }
 
