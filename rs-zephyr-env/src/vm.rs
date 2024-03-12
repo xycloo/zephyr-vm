@@ -3,9 +3,18 @@
 
 use anyhow::{Result, anyhow};
 use std::{cell::RefCell, rc::Rc};
-use wasmi::{core::Pages, Engine, Instance, Linker, Memory, Module, Store};
+use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store};
 
 use crate::{db::database::ZephyrDatabase, error::HostError, host::Host};
+
+
+const MIN_VALUE_STACK_HEIGHT: usize = 1024;
+
+// Allowing for more stack height than default. Currently shouldn't be
+// required by most programs, but better to keep these configurable on our
+// end
+const MAX_VALUE_STACK_HEIGHT: usize = 2 * 1024 * MIN_VALUE_STACK_HEIGHT;
+const MAX_RECURSION_DEPTH: usize = 1024;
 
 /// MemoryManager object. Stored in the VM object.
 #[derive(Clone)]
@@ -48,10 +57,12 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
     /// Creates and instantiates the VM.
     pub fn new(host: &Host<DB>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
         let mut config = wasmi::Config::default();
+        let stack_limits = StackLimits::new(MIN_VALUE_STACK_HEIGHT, MAX_VALUE_STACK_HEIGHT, MAX_RECURSION_DEPTH).unwrap();
 
         // TODO: decide which post-mvp features to override.
         // For now we use wasmtime's defaults.
         config.consume_fuel(true);
+        config.set_stack_limits(stack_limits);
         
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_module_code_bytes)?;
@@ -128,13 +139,9 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{read, read_to_string, File};
-    use std::io::{self, BufRead};
+    use std::fs::{read, read_to_string};
     use std::rc::Rc;
-
     use stellar_xdr::curr::{Limits, LedgerCloseMeta, ReadXdr, WriteXdr};
-    
-
     use crate::{host::Host, testutils::database::MercuryDatabase, ZephyrMock};
 
     use super::Vm;
@@ -147,34 +154,12 @@ mod tests {
     // TODO: rewrite Zephyr-only tests.
 
     #[test]
-    fn alloc_invocation() {
+    fn mainnet_ledger() {
+        // todo rewrite test with proper configs
         let code = { read("/mnt/storagehdd/projects/master/zephyr-examples/zephyr-hello-ledger/target/wasm32-unknown-unknown/release/zephyr_hello_ledger.wasm").unwrap() };
+        let mainnet_ledger = LedgerCloseMeta::from_xdr_base64(read_to_string("../../mercury/ledger.txt").unwrap(), Limits::none()).unwrap().to_xdr(Limits::none()).unwrap();
         
-        let mainnet_ledger = { 
-            let file = File::open("/home/tommasodeponti/Desktop/mainnet-ledger.txt").unwrap();
-            let reader = io::BufReader::new(file);
-        
-            // Read the file line by line
-            let mut numbers = Vec::new();
-            for line in reader.lines() {
-                // Parse each line into numbers separated by whitespace
-                let line = line.unwrap();
-                for num_str in line.split_whitespace() {
-                    let num_str = num_str.replace(',', "");
-                    let num_str = num_str.replace('[', "");
-                    let num_str = num_str.replace(']', "");
-                    // Parse each number as u8 and push it into the Vec<u8>
-                    if let Ok(num) = num_str.parse::<u8>() {
-                        numbers.push(num);
-                    } else {
-                        eprintln!("Error parsing number: {}", num_str);
-                    }
-                }
-            }
-            numbers
-        //    read_to_string("/home/tommasodeponti/Desktop/mainnet-ledger.txt").unwrap() 
-        };
-       
+        assert!(LedgerCloseMeta::from_xdr(&mainnet_ledger, Limits::none()).is_ok());
         let mut host = Host::<MercuryDatabase>::mocked().unwrap();
         host.add_ledger_close_meta(mainnet_ledger).unwrap();
 
