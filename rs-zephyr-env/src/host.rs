@@ -8,7 +8,7 @@ use rs_zephyr_common::{DatabaseError, ZephyrStatus};
 
 //use sha2::{Digest, Sha256};
 use std::{
-    borrow::BorrowMut, cell::{Ref, RefCell, RefMut}, fs::write, rc::{Rc, Weak}
+    borrow::BorrowMut, cell::{Ref, RefCell, RefMut}, rc::{Rc, Weak}
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
@@ -20,7 +20,7 @@ use crate::{
     },
     error::HostError,
     stack::Stack,
-    vm::{MemoryManager, Vm},
+    vm::Vm,
     vm_context::VmContext,
     ZephyrMock, ZephyrStandard,
 };
@@ -257,15 +257,11 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         // TODO: this should actually only grow the linear memory when needed, so check the current
         // pages and the size of the contents to compute a safe pages size (else error with a growth error).
         // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
-        memory.grow(&mut caller, Pages::new(2000).unwrap());
-
-        println!("{} {}", offset, data.len());
+        let _ = memory.grow(&mut caller, Pages::new(1000).unwrap());
+        
         if let Err(error) = memory.write(&mut caller, offset, data) {
-            write("failed_meta.txt", contents).unwrap();
             return Err(anyhow!(error))
-        }; // todo handle this
-
-        println!("\n\n SUCCESS WRITING MEM");
+        };
 
         Ok((offset as i64, data.len() as i64))
     }
