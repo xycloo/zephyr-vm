@@ -75,10 +75,19 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
     });
 
     let deser_code = idents.iter().map(|(ident, index, field_type)| {
+        let field_string = field_type.to_string();
+        let field_str = field_string.as_str();
         if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
             quote! {
                 let bytes = row.row.get(#index).unwrap();
                 let #ident = bincode::deserialize::<ZephyrVal>(&bytes.0).unwrap();
+            
+            }
+        } else if check_type!(field_str, "ScVal", "Hash") {
+            quote! {
+                let bytes = row.row.get(#index).unwrap();
+                let #ident = ReadXdr::from_xdr(&bytes.0, Limits::none()).unwrap();
+            
             }
         } else {
             quote! {
@@ -94,7 +103,11 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
             quote! {
                 bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident.clone()).unwrap()).unwrap().as_slice()
             }
-        } else {
+        } else if check_type!(field_type.to_string().as_str(), "ScVal", "Hash") {
+            quote! {
+                self.#ident.clone().to_xdr(Limits::none()).unwrap().as_slice()
+            }
+        }  else {
             quote! {
                 bincode::serialize(&self.#ident).unwrap().as_slice()
             }
@@ -105,6 +118,10 @@ pub fn database_interact_derive(input: TokenStream) -> TokenStream {
         if check_type!(field_type.to_string().as_str(), "i64", "i128", "u64", "f64", "u32", "i32", "f32", "String", "Vec") {
             quote! {
                 bincode::serialize(&TryInto::<ZephyrVal>::try_into(self.#ident.clone()).unwrap()).unwrap().as_slice()
+            }
+        } else if check_type!(field_type.to_string().as_str(), "ScVal", "Hash") {
+            quote! {
+                self.#ident.clone().to_xdr(Limits::none()).unwrap().as_slice()
             }
         } else {
             quote! {
