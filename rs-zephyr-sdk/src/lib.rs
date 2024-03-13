@@ -8,7 +8,7 @@ pub use ledger_meta::MetaReader;
 use database::Database;
 use rs_zephyr_common::ZephyrStatus;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use std::{alloc::{alloc, Layout}, convert::TryInto};
 use stellar_xdr::next::{Limits, ReadXdr};
 use thiserror::Error;
 
@@ -105,7 +105,7 @@ impl TypeWrap {
 
 #[derive(Clone)]
 pub struct EnvClient {
-    xdr: stellar_xdr::next::LedgerCloseMeta,
+    pub xdr: Option<stellar_xdr::next::LedgerCloseMeta>,
 }
 
 // Note: some methods take self as param though it's not needed yet.
@@ -137,7 +137,11 @@ impl EnvClient {
     pub fn reader(&self) -> MetaReader {
         let meta = &self.xdr;
 
-        MetaReader::new(meta)
+        if let Some(meta) = meta {
+            MetaReader::new(meta)
+        } else {
+            panic!("Internal SDK error") // todo: handle
+        }
     }
 
     pub fn new() -> Self {
@@ -149,10 +153,10 @@ impl EnvClient {
                 let start = memory.offset(offset as isize);
                 core::slice::from_raw_parts(start, size as usize)
             };
-
-            stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap()
+            
+            Some(stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap())
         };
-
+        
         Self { xdr: ledger_meta }
     }
 }
