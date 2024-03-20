@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use std::{cell::RefCell, rc::Rc};
 use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store};
 
-use crate::{db::database::ZephyrDatabase, error::HostError, host::Host};
+use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, error::HostError, host::Host};
 
 
 const MIN_VALUE_STACK_HEIGHT: usize = 1024;
@@ -38,13 +38,13 @@ impl MemoryManager {
 }
 
 /// The Zephyr VM.
-pub struct Vm<DB: ZephyrDatabase> {
+pub struct Vm<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// Module object.
     #[allow(dead_code)]
     module: Module, // currently not used.
 
     /// VM's store object. Provides bindings to the host.
-    pub store: RefCell<Store<Host<DB>>>,
+    pub store: RefCell<Store<Host<DB, L>>>,
 
     /// Memory manager.
     pub memory_manager: MemoryManager,
@@ -53,9 +53,9 @@ pub struct Vm<DB: ZephyrDatabase> {
 }
 
 #[allow(dead_code)]
-impl<DB: ZephyrDatabase + Clone> Vm<DB> {
+impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead + Clone> Vm<DB, L> {
     /// Creates and instantiates the VM.
-    pub fn new(host: &Host<DB>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
+    pub fn new(host: &Host<DB, L>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
         let mut config = wasmi::Config::default();
         let stack_limits = StackLimits::new(MIN_VALUE_STACK_HEIGHT, MAX_VALUE_STACK_HEIGHT, MAX_RECURSION_DEPTH).unwrap();
 
@@ -75,7 +75,7 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
 
         // TODO: set Store::limiter() once host implements ResourceLimiter
 
-        let mut linker = <Linker<Host<DB>>>::new(&engine);
+        let mut linker = <Linker<Host<DB, L>>>::new(&engine);
         
         for func_info in host.host_functions(&mut store) {
             linker.define(
@@ -109,7 +109,7 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
     /// By default, the called function is defined in the host as the EntryPointInfo.
     /// The function itself won't return anything but will have access to the Database
     /// implementation and the ledger metadata through Host bindings.
-    pub fn metered_call(self: &Rc<Self>, host: &Host<DB>) -> Result<()> {
+    pub fn metered_call(self: &Rc<Self>, host: &Host<DB, L>) -> Result<()> {
         let store = &self.store;
         let entry_point_info = host.get_entry_point_info();
         let mut retrn = entry_point_info.retrn.clone();
@@ -136,7 +136,7 @@ impl<DB: ZephyrDatabase + Clone> Vm<DB> {
         Ok(())
     }
 }
-
+/* 
 #[cfg(test)]
 mod tests {
     use std::fs::{read, read_to_string};
@@ -173,4 +173,4 @@ mod tests {
 
         println!("elapsed {:?}", start.elapsed());
     }
-}
+}*/

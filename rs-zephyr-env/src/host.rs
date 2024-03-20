@@ -5,6 +5,7 @@
 
 use anyhow::{Result, anyhow};
 use rs_zephyr_common::{DatabaseError, ZephyrStatus};
+use stellar_xdr::next::{Hash, ScAddress, ScVal};
 
 //use sha2::{Digest, Sha256};
 use std::{
@@ -15,8 +16,7 @@ use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 use crate::{
     budget::Budget,
     db::{
-        database::{Database, DatabasePermissions, WhereCond, ZephyrDatabase},
-        shield::ShieldedStore,
+        database::{Database, DatabasePermissions, WhereCond, ZephyrDatabase}, ledger::{Ledger, LedgerStateRead}, shield::ShieldedStore
     },
     error::HostError,
     stack::Stack,
@@ -72,7 +72,7 @@ impl ZephyrStandard for EntryPointInfo {
 
 /// Zephyr Host State Implementation.
 #[derive(Clone)]
-pub struct HostImpl<DB: ZephyrDatabase> {
+pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// Host id.
     pub id: i64,
 
@@ -86,6 +86,9 @@ pub struct HostImpl<DB: ZephyrDatabase> {
     /// Database implementation.
     pub database: RefCell<Database<DB>>,
 
+    /// Ledger state.
+    pub ledger: Ledger<L>,
+
     /// Budget implementation.
     pub budget: RefCell<Budget>,
 
@@ -93,7 +96,7 @@ pub struct HostImpl<DB: ZephyrDatabase> {
     pub entry_point_info: RefCell<EntryPointInfo>,
 
     /// VM context.
-    pub context: RefCell<VmContext<DB>>,
+    pub context: RefCell<VmContext<DB, L>>,
 
     /// Host pseudo stack implementation.
     pub stack: RefCell<Stack>,
@@ -101,10 +104,10 @@ pub struct HostImpl<DB: ZephyrDatabase> {
 
 /// Zephyr Host State.
 #[derive(Clone)]
-pub struct Host<DB: ZephyrDatabase>(Rc<HostImpl<DB>>); // We wrap [`HostImpl`] here inside an rc pointer for multi ownership.
+pub struct Host<DB: ZephyrDatabase, L: LedgerStateRead>(Rc<HostImpl<DB, L>>); // We wrap [`HostImpl`] here inside an rc pointer for multi ownership.
 
 #[allow(dead_code)]
-impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
+impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> Host<DB, L> {
     /// Creates a standard Host object starting from a given
     /// host ID. The host ID is the only relation between the VM
     /// and the entity it is bound to. For instance, in Mercury
@@ -116,6 +119,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::zephyr_standard()?),
+            ledger: Ledger::zephyr_standard()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
             entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::zephyr_standard()?),
@@ -124,7 +128,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard> Host<DB> {
     }
 }
 
-impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Host<DB> {
+impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMock for Host<DB, L> {
     /// Creates a Host object designed to be used in tests with potentially
     /// mocked data such as host id, databases and context.
     fn mocked() -> Result<Self> {
@@ -133,6 +137,7 @@ impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Host<DB> {
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::mocked()?),
+            ledger: Ledger::mocked()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
             entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::mocked()?),
@@ -157,7 +162,7 @@ pub struct FunctionInfo {
 }
 
 #[allow(dead_code)]
-impl<DB: ZephyrDatabase + Clone> Host<DB> {
+impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     /// Loads the ledger close meta bytes of the ledger the Zephyr VM will have
     /// access to.
     ///
@@ -198,7 +203,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     }
 
     /// Loads VM context in the host if needed.
-    pub fn load_context(&self, vm: Weak<Vm<DB>>) -> Result<()> {
+    pub fn load_context(&self, vm: Weak<Vm<DB, L>>) -> Result<()> {
         let mut vm_context = self.0.context.borrow_mut();
 
         vm_context.load_vm(vm)
@@ -506,6 +511,20 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
         Self::write_to_memory(caller, read.as_slice())
     }
 
+    pub fn read_contract_data_entry_by_contract_id_and_key(caller: Caller<Self>) -> Result<(i64, i64)> {
+        let host = caller.data();
+        
+        let contract = ScAddress::Contract(Hash([0;32]));
+        let key = ScVal::LedgerKeyContractInstance;
+
+        let read = {
+            let ledger = &host.0.ledger.0.ledger;
+            ledger.read_contract_data_entry_by_contract_id_and_key(contract, key)
+        };
+        
+        Self::write_to_memory(caller, &[])
+    }
+
     /// Returns all the host functions that must be defined in the linker.
     /// This should be the only public function related to foreign functions
     /// provided by the VM, the specific host functions should remain private.
@@ -528,7 +547,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
     /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
     /// writes it to the module's memory. Returns the offset and the size of the bytes
     /// written in the binary's memory.
-    pub fn host_functions(&self, store: &mut Store<Host<DB>>) -> [FunctionInfo; 6] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 6] {
         let mut store = store;
 
         let db_write_fn = {
@@ -600,7 +619,7 @@ impl<DB: ZephyrDatabase + Clone> Host<DB> {
 
         let stack_push_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, param: i64| {
-                let host: &Host<DB> = caller.data();
+                let host: &Host<DB, L> = caller.data();
                 host.as_stack_mut().0.push(param);
             });
 

@@ -1,5 +1,5 @@
 use crate::{
-    db::database::ZephyrDatabase,
+    db::{database::ZephyrDatabase, ledger::{ContractDataEntry, LedgerStateRead}},
     ZephyrMock, ZephyrStandard,
 };
 use anyhow::Result;
@@ -51,6 +51,27 @@ impl ZephyrMock for MercuryDatabase {
         Ok(MercuryDatabase {
             connect: DbAuth::mocked()?,
         })
+    }
+}
+
+#[derive(Clone)]
+pub struct LedgerReader {}
+
+impl LedgerStateRead for LedgerReader {
+    fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<crate::db::ledger::ContractDataEntry> {
+        vec![]
+    }
+
+    fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<ContractDataEntry> {
+        vec![]
+    }
+
+    fn read_contract_data_entry_by_contract_id_and_key(&self, contract: stellar_xdr::next::ScAddress, key: stellar_xdr::next::ScVal) -> Option<ContractDataEntry> {
+        None
+    }
+
+    fn read_contract_instance_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Option<ContractDataEntry> {
+        None
     }
 }
 
