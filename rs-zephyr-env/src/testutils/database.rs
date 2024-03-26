@@ -1,9 +1,9 @@
 use crate::{
-    db::{database::ZephyrDatabase, ledger::{ContractDataEntry, LedgerStateRead}},
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
     ZephyrMock, ZephyrStandard,
 };
 use anyhow::Result;
-use rs_zephyr_common::DatabaseError;
+use rs_zephyr_common::{ContractDataEntry, DatabaseError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -58,21 +58,25 @@ impl ZephyrMock for MercuryDatabase {
 pub struct LedgerReader {}
 
 impl LedgerStateRead for LedgerReader {
-    fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<crate::db::ledger::ContractDataEntry> {
+    /*fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<ContractDataEntry> {
         vec![]
     }
 
     fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<ContractDataEntry> {
         vec![]
-    }
+    }*/
 
     fn read_contract_data_entry_by_contract_id_and_key(&self, contract: stellar_xdr::next::ScAddress, key: stellar_xdr::next::ScVal) -> Option<ContractDataEntry> {
         None
     }
 
-    fn read_contract_instance_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Option<ContractDataEntry> {
-        None
+    fn read_contract_data_entries_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Vec<ContractDataEntry> {
+        vec![]
     }
+
+    //fn read_contract_instance_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Option<ContractDataEntry> {
+        //None
+    //}
 }
 
 impl ZephyrDatabase for MercuryDatabase {

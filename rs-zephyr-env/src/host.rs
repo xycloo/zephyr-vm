@@ -4,12 +4,12 @@
 //! the implementor.
 
 use anyhow::{Result, anyhow};
-use rs_zephyr_common::{DatabaseError, ZephyrStatus};
-use stellar_xdr::next::{Hash, ScAddress, ScVal};
+use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
+use stellar_xdr::next::{Hash, LedgerEntry, Limits, ReadXdr, ScAddress, ScVal};
 
 //use sha2::{Digest, Sha256};
 use std::{
-    borrow::BorrowMut, cell::{Ref, RefCell, RefMut}, rc::{Rc, Weak}
+    borrow::{Borrow, BorrowMut}, cell::{Ref, RefCell, RefMut}, num::Wrapping, rc::{Rc, Weak}
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
@@ -44,7 +44,7 @@ mod byte_utils {
 /// function is exported by the binary with the given
 /// argument types.
 #[derive(Clone)]
-pub struct EntryPointInfo {
+pub struct InvokedFunctionInfo {
     /// Name of the function.
     pub fname: String,
 
@@ -55,9 +55,19 @@ pub struct EntryPointInfo {
     pub retrn: Vec<Value>,
 }
 
+impl InvokedFunctionInfo {
+    pub(crate) fn serverless_defaults(name: &str) -> Self {
+        Self { 
+            fname: name.into(), 
+            params: vec![], 
+            retrn: vec![] 
+        }
+    }
+}
+
 /// By default, Zephyr infers a standard entry point:
 /// the `on_close() -> ()` function.
-impl ZephyrStandard for EntryPointInfo {
+impl ZephyrStandard for InvokedFunctionInfo {
     fn zephyr_standard() -> Result<Self>
     where
         Self: Sized,
@@ -76,6 +86,8 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// Host id.
     pub id: i64,
 
+    pub result: RefCell<String>,
+
     /// Latest ledger close meta. This is set as optional as
     /// some Zephyr programs might not need the ledger meta.
     pub latest_close: RefCell<Option<Vec<u8>>>, // some zephyr programs might not need the ledger close meta
@@ -93,7 +105,7 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     pub budget: RefCell<Budget>,
 
     /// Entry point info.
-    pub entry_point_info: RefCell<EntryPointInfo>,
+    pub entry_point_info: RefCell<InvokedFunctionInfo>,
 
     /// VM context.
     pub context: RefCell<VmContext<DB, L>>,
@@ -116,12 +128,13 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     pub fn from_id(id: i64) -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id,
+            result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::zephyr_standard()?),
             ledger: Ledger::zephyr_standard()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
-            entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
+            entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::zephyr_standard()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
         })))
@@ -134,12 +147,13 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
     fn mocked() -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id: 0,
+            result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::mocked()?),
             ledger: Ledger::mocked()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
-            entry_point_info: RefCell::new(EntryPointInfo::zephyr_standard()?),
+            entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::mocked()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
         })))
@@ -198,7 +212,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     }
 
     /// Returns a reference to the host's entry point information.
-    pub fn get_entry_point_info(&self) -> Ref<EntryPointInfo> {
+    pub fn get_entry_point_info(&self) -> Ref<InvokedFunctionInfo> {
         self.0.entry_point_info.borrow()
     }
 
@@ -275,7 +289,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     // `write_database_raw` currently directly calls the database implementation
     // to write the database. Once the shield store implementation is ready this will
     // await for end of execution and handle + execute the transaction.
-    fn write_database_raw(mut caller: Caller<Self>) -> Result<()> {
+    fn write_database_raw(caller: Caller<Self>) -> Result<()> {
         let (memory, write_point_hash, columns, segments) = {
             let host = caller.data();
             let stack_impl = host.as_stack_mut();
@@ -324,13 +338,13 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
 
         let aggregated_data = segments
             .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
             .collect::<Result<Vec<_>, _>>()?;
 
 
         let host = caller.data();
         let db_obj = host.0.database.borrow();
-        let db_impl = db_obj.0.borrow();
+        let db_impl = &db_obj.0;
 
         if let DatabasePermissions::ReadOnly = db_impl.permissions {
             return Err(DatabaseError::WriteOnReadOnly.into());
@@ -346,7 +360,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         Ok(())
     }
 
-    fn update_database_raw(mut caller: Caller<Self>) -> Result<()> {
+    fn update_database_raw(caller: Caller<Self>) -> Result<()> {
         let (memory, write_point_hash, columns, segments, conditions, conditions_args) = {
             let host = caller.data();
 
@@ -435,12 +449,12 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
 
         let aggregated_data = segments
             .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
             .collect::<Result<Vec<_>, _>>()?;
 
         let aggregated_conditions_args = conditions_args
             .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &mut caller, *segment))
+            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
             .collect::<Result<Vec<_>, _>>()?;
 
 
@@ -511,18 +525,55 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         Self::write_to_memory(caller, read.as_slice())
     }
 
-    pub fn read_contract_data_entry_by_contract_id_and_key(caller: Caller<Self>) -> Result<(i64, i64)> {
+    fn internal_read_contract_data_entry_by_contract_id_and_key(caller: Caller<Self>, contract: [u8; 32], key: ScVal) -> Result<(i64, i64)> {
         let host = caller.data();
-        
-        let contract = ScAddress::Contract(Hash([0;32]));
-        let key = ScVal::LedgerKeyContractInstance;
-
+    
+        let contract = ScAddress::Contract(Hash(contract));
         let read = {
             let ledger = &host.0.ledger.0.ledger;
-            ledger.read_contract_data_entry_by_contract_id_and_key(contract, key)
+            bincode::serialize(&ledger.read_contract_data_entry_by_contract_id_and_key(contract, key)).unwrap()
         };
         
-        Self::write_to_memory(caller, &[])
+        Self::write_to_memory(caller, &read)
+    }
+
+
+    pub fn read_contract_data_entry_by_contract_id_and_key(caller: Caller<Self>, contract: [u8; 32], offset: i64, size: i64) -> Result<(i64, i64)> {
+        let host = caller.data();
+        
+        let key = {
+            let memory = {
+                let context = host.0.context.borrow();
+                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let mem_manager = &vm.memory_manager;
+
+                mem_manager.memory
+            };
+
+            let segment = (offset, size);
+            
+            ScVal::from_xdr(Self::read_segment_from_memory(&memory, &caller, segment)?, Limits::none())?
+        };
+
+        Self::internal_read_contract_data_entry_by_contract_id_and_key(caller, contract, key)
+    }
+
+    pub fn read_contract_instance(caller: Caller<Self>, contract: [u8; 32]) -> Result<(i64, i64)> {
+        let key = ScVal::LedgerKeyContractInstance;
+
+        Self::internal_read_contract_data_entry_by_contract_id_and_key(caller, contract, key)
+    }
+
+    pub fn read_contract_entries(caller: Caller<Self>, contract: [u8; 32]) -> Result<(i64, i64)> {
+        let host = caller.data();
+    
+        let contract = ScAddress::Contract(Hash(contract));
+        let read = {
+            let ledger = &host.0.ledger.0.ledger;
+            bincode::serialize(&ledger.read_contract_data_entries_by_contract_id(contract)).unwrap()
+        };
+        
+        Self::write_to_memory(caller, &read)
     }
 
     /// Returns all the host functions that must be defined in the linker.
@@ -547,7 +598,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
     /// writes it to the module's memory. Returns the offset and the size of the bytes
     /// written in the binary's memory.
-    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 6] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 10] {
         let mut store = store;
 
         let db_write_fn = {
@@ -602,6 +653,75 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
                 module: "env",
                 func: "read_raw",
                 wrapped: db_read_fn_wrapped,
+            }
+        };
+
+        let read_contract_data_entry_by_contract_id_and_key_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64, offset: i64, size: i64| {
+                let contract = WrappedMaxBytes::array_from_max_parts::<32>(&[contract_part_1, contract_part_2, contract_part_3, contract_part_4]);
+
+                let result = Host::read_contract_data_entry_by_contract_id_and_key(caller, contract, offset, size);
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_contract_data_entry_by_contract_id_and_key",
+                wrapped
+            }
+        };
+
+        let read_contract_instance_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64| {
+                let contract = WrappedMaxBytes::array_from_max_parts::<32>(&[contract_part_1, contract_part_2, contract_part_3, contract_part_4]);
+                let result = Host::read_contract_instance(caller, contract);
+                
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_contract_instance",
+                wrapped
+            }
+        };
+
+        let read_contract_entries_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64| {
+                let contract = WrappedMaxBytes::array_from_max_parts::<32>(&[contract_part_1, contract_part_2, contract_part_3, contract_part_4]);
+                let result = Host::read_contract_entries(caller, contract);
+                
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_contract_entries_by_contract",
+                wrapped
+            }
+        };
+
+        let conclude_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+                Host::write_result(caller, offset, size);
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "conclude",
+                wrapped
             }
         };
 
@@ -663,15 +783,41 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             log_fn,
             stack_push_fn,
             read_ledger_meta_fn,
+            read_contract_data_entry_by_contract_id_and_key_fn,
+            read_contract_instance_fn,
+            read_contract_entries_fn,
+            conclude_fn
         ]
     }
     
-    fn read_segment_from_memory(memory: &Memory, caller: &mut Caller<Self>, segment: (i64, i64)) -> Result<Vec<u8>> {
+    fn write_result(caller: Caller<Self>, offset: i64, size: i64) {
+        let host = caller.data();
+
+        let memory = {
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let mem_manager = &vm.memory_manager;
+
+            mem_manager.memory
+        };
+
+        let segment = (offset, size);
+        let seg = Self::read_segment_from_memory(&memory, &caller, segment).unwrap();
+        let res: String = bincode::deserialize(&seg).unwrap();
+        
+        host.0.result.borrow_mut().push_str(&res);
+    }
+
+    fn read_segment_from_memory(memory: &Memory, caller: &Caller<Self>, segment: (i64, i64)) -> Result<Vec<u8>> {
         let mut written_vec = vec![0; segment.1 as usize];
         if let Err(error) = memory.read(caller, segment.0 as usize, &mut written_vec) {
             return Err(anyhow!(error));
         }
         
         Ok(written_vec)
+    }
+
+    pub fn read_result(&self) -> String {
+        self.0.result.borrow().clone()
     }
 }

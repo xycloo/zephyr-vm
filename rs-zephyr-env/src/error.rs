@@ -22,5 +22,11 @@ pub enum HostError {
 
     #[error("Requested ledger close meta but it is none")]
     NoLedgerCloseMeta,
+
+    #[error("Requested ledger entry doesn't exist")]
+    NoLedgerEntry,
+
+    #[error("Invalid types found on function result")]
+    InvalidFunctionResult
 }
 

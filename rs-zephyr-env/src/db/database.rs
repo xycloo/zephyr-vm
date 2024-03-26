@@ -112,7 +112,7 @@ pub struct DatabaseImpl<DB: ZephyrDatabase> {
 
 /// Wrapper of the database implementation.
 #[derive(Clone)]
-pub struct Database<DB: ZephyrDatabase>(pub(crate) Rc<RefCell<DatabaseImpl<DB>>>);
+pub struct Database<DB: ZephyrDatabase>(pub(crate) DatabaseImpl<DB>);
 
 impl<DB: ZephyrDatabase + ZephyrStandard> ZephyrStandard for DatabaseImpl<DB> {
     fn zephyr_standard() -> Result<Self> {
@@ -125,9 +125,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard> ZephyrStandard for DatabaseImpl<DB> {
 
 impl<DB: ZephyrDatabase + ZephyrStandard> ZephyrStandard for Database<DB> {
     fn zephyr_standard() -> Result<Self> {
-        Ok(Self(Rc::new(
-            RefCell::new(DatabaseImpl::zephyr_standard()?),
-        )))
+        Ok(Self(DatabaseImpl::zephyr_standard()?))
     }
 }
 
@@ -142,6 +140,6 @@ impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for DatabaseImpl<DB> {
 
 impl<DB: ZephyrDatabase + ZephyrMock> ZephyrMock for Database<DB> {
     fn mocked() -> Result<Self> {
-        Ok(Self(Rc::new(RefCell::new(DatabaseImpl::mocked()?))))
+        Ok(Self(DatabaseImpl::mocked()?))
     }
 }

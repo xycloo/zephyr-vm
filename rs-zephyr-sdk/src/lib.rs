@@ -1,15 +1,18 @@
 mod database;
 mod ledger_meta;
 mod symbol;
+mod ledger;
 
 pub use database::{TableRow, TableRows};
 pub use ledger_meta::MetaReader;
+pub use rs_zephyr_common::ContractDataEntry;
 
 use database::Database;
-use rs_zephyr_common::ZephyrStatus;
+use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
 use serde::{Deserialize, Serialize};
+use core::slice;
 use std::{alloc::{alloc, Layout}, convert::TryInto};
-use stellar_xdr::next::{Limits, ReadXdr};
+use stellar_xdr::next::{LedgerEntry, Limits, ReadXdr, ScVal, WriteXdr};
 use thiserror::Error;
 
 pub use ledger_meta::EntryChanges;
@@ -19,6 +22,7 @@ pub use rs_zephyr_common::ZephyrVal;
 pub use bincode;
 pub use macros::DatabaseInteract as DatabaseDerive;
 
+pub type ServerlessResult = (i64, i64);
 
 fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
@@ -28,6 +32,22 @@ fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
 extern crate wee_alloc;
 
 extern "C" {
+    #[allow(improper_ctypes)]
+    #[link_name = "read_contract_data_entry_by_contract_id_and_key"]
+    pub fn read_contract_data_entry_by_contract_id_and_key(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64, offset: i64, size: i64) -> (i64, i64, i64);
+
+    #[allow(improper_ctypes)]
+    #[link_name = "read_contract_instance"]
+    pub fn read_contract_instance(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64, i64);
+
+    #[allow(improper_ctypes)]
+    #[link_name = "read_contract_entries_by_contract"]
+    pub fn read_contract_entries_by_contract(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64, i64);
+
+    #[allow(improper_ctypes)]
+    #[link_name = "conclude"]
+    pub fn conclude_host(offset: i64, size: i64);
+
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_raw"]
     pub fn read_raw() -> (i64, i64, i64);
@@ -110,6 +130,13 @@ pub struct EnvClient {
 
 // Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
+    pub fn conclude<T: Serialize>(&self, result: T) {
+        let v = bincode::serialize(&serde_json::to_string(&result).unwrap()).unwrap();
+        unsafe {
+            conclude_host(v.as_ptr() as i64, v.len() as i64)
+        }
+    }
+
     pub fn read<T: DatabaseInteract>(&self) -> Vec<T> {
         T::read_to_rows(&self)
     }
@@ -158,6 +185,10 @@ impl EnvClient {
         };
         
         Self { xdr: ledger_meta }
+    }
+
+    pub fn empty() -> Self {
+        Self { xdr: None }
     }
 }
 

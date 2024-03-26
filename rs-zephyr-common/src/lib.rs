@@ -2,6 +2,14 @@
 //! This crate omits the structures that are shared between
 //! Zephyr and Mercury due to the latter's closed-source nature.
 
+pub mod wrapping;
+
+
+pub fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
+
 #[repr(u32)]
 pub enum ZephyrStatus {
     Unknown = 0,
@@ -13,6 +21,7 @@ pub enum ZephyrStatus {
 }
 
 use serde::{Deserialize, Serialize};
+use stellar_xdr::next::{LedgerEntry, ScAddress, ScVal};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -81,6 +90,15 @@ pub enum ZephyrVal {
 #[derive(Debug)]
 pub enum ZephyrValError {
     ConversionError
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ContractDataEntry {
+    pub contract_id: ScAddress,
+    pub key: ScVal,
+    pub entry: LedgerEntry,
+    pub durability: i32,
+    pub last_modified: i32
 }
 
 macro_rules! impl_inner_from {

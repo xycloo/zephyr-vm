@@ -21,7 +21,7 @@ use anyhow::Result;
 
 /// This only for testing
 #[cfg(feature = "testutils")]
-mod testutils;
+pub mod testutils;
 
 /// Standard object for Zephyr. This trait must be implemented for all
 /// components that are encompassed by the Zephyr VM, specifically

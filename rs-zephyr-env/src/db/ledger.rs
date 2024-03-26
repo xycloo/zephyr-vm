@@ -7,32 +7,29 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::Result;
+use rs_zephyr_common::ContractDataEntry;
+use serde::{Deserialize, Serialize};
 use stellar_xdr::next::{ContractDataDurability, LedgerEntry, ScAddress, ScVal};
 
 use crate::{ZephyrMock, ZephyrStandard};
 
-#[derive(Debug)]
-pub struct ContractDataEntry {
-    pub contract_id: ScAddress,
-    pub key: ScVal,
-    pub entry: LedgerEntry,
-    pub durability: ContractDataDurability,
-    pub last_modified: i32
-}
 
 /// Reads state from the Stellar Ledger.
 pub trait LedgerStateRead {
-    /// Returns a vector of Contract Data Entries given a set of contract addresses.
-    fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = ScAddress>) -> Vec<ContractDataEntry>;
+    // Returns a vector of Contract Data Entries given a set of contract addresses.
+    //fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = ScAddress>) -> Vec<ContractDataEntry>;
 
-    /// Returns a vector of contract instance entries given a set of contract addresses.
-    fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = ScAddress>) -> Vec<ContractDataEntry>;
+    // Returns a vector of contract instance entries given a set of contract addresses.
+    //fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = ScAddress>) -> Vec<ContractDataEntry>;
 
-    /// Returns a contract instance entry given a contract address.
-    fn read_contract_instance_by_contract_id(&self, contract: ScAddress) -> Option<ContractDataEntry>;
+    // Returns a contract instance entry given a contract address.
+    //fn read_contract_instance_by_contract_id(&self, contract: ScAddress) -> Option<ContractDataEntry>;
     
     /// Returns a contract data entry given a contract address and a ledger key.
     fn read_contract_data_entry_by_contract_id_and_key(&self, contract: ScAddress, key: ScVal) -> Option<ContractDataEntry>;
+
+    /// Returns all entries for a contract.
+    fn read_contract_data_entries_by_contract_id(&self, contract: ScAddress) -> Vec<ContractDataEntry>;
 }
 
 #[derive(Clone)]

@@ -1,0 +1,17 @@
+[package]
+name = "function-execution"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rusqlite = "0.31.0"
+zephyr = { path = "../rs-zephyr-env", features = ["testutils"] }
+rs-zephyr-common = { path = "../rs-zephyr-common" }
+stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
+anyhow = "1.0.75"
+bincode = "1.0"
+warp = "0.3.6"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }

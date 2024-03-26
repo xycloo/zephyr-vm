@@ -2,10 +2,12 @@
 //!
 
 use anyhow::{Result, anyhow};
+use rs_zephyr_common::ContractDataEntry;
+use stellar_xdr::next::{LedgerEntry, VecM};
 use std::{cell::RefCell, rc::Rc};
-use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store};
+use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store, Value};
 
-use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, error::HostError, host::Host};
+use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, error::HostError, host::{InvokedFunctionInfo, Host}};
 
 
 const MIN_VALUE_STACK_HEIGHT: usize = 1024;
@@ -106,7 +108,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead + Clone> Vm<DB, L> {
     }
 
     /// Entry point of a Zephyr VM invocation.
-    /// By default, the called function is defined in the host as the EntryPointInfo.
+    /// By default, the called function is defined in the host as the InvokedFunctionInfo.
     /// The function itself won't return anything but will have access to the Database
     /// implementation and the ledger metadata through Host bindings.
     pub fn metered_call(self: &Rc<Self>, host: &Host<DB, L>) -> Result<()> {
@@ -134,6 +136,34 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead + Clone> Vm<DB, L> {
         )?;
 
         Ok(())
+    }
+
+    pub fn metered_function_call(self: &Rc<Self>, host: &Host<DB, L>, fname: &str) -> Result<String> {
+        let invoked_function_info = InvokedFunctionInfo::serverless_defaults(fname);
+
+        let store: &RefCell<Store<Host<DB, L>>> = &self.store;
+        let mut retrn = invoked_function_info.retrn.clone();
+
+        let ext = match self
+            .instance
+            .get_export(&mut *store.borrow_mut(), &invoked_function_info.fname)
+        {
+            Some(ext) => ext,
+            None => return Err(HostError::NoEntryPointExport.into()),
+        };
+
+        let func = match ext.into_func() {
+            Some(func) => func,
+            None => return Err(HostError::ExternNotAFunction.into()),
+        };
+
+        func.call(
+            &mut *store.borrow_mut(),
+            invoked_function_info.params.as_slice(),
+            &mut retrn,
+        )?;
+
+        Ok(host.read_result())
     }
 }
 /* 
