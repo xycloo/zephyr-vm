@@ -16,7 +16,7 @@ impl ZephyrMock for LedgerReader {
         where
             Self: Sized {
 
-        Ok(Self { path: "/home/tommasodeponti/Desktop/stellar.db".into() })
+        Ok(Self { path: "../../stellar.db".into() })
     }
 }
 
@@ -106,7 +106,7 @@ mod test {
 
     #[test]
     fn run_instance_getter() {
-        let code = { read("/mnt/storagehdd/projects/master/zephyr/target/wasm32-unknown-unknown/release/simple.wasm").unwrap() };
+        let code = { read("../target/wasm32-unknown-unknown/release/simple.wasm").unwrap() };
         let execution = ExecutionWrapper::new(&code);
 
         execution.execute_function("mytest");
@@ -114,7 +114,7 @@ mod test {
 
     #[test]
     fn run_entries_filter() {
-        let code = { read("/mnt/storagehdd/projects/master/zephyr/target/wasm32-unknown-unknown/release/entries_filter.wasm").unwrap() };
+        let code = { read("../target/wasm32-unknown-unknown/release/entries_filter.wasm").unwrap() };
         let execution = ExecutionWrapper::new(&code);
 
         execution.execute_function("top_holders");

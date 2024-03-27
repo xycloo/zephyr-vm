@@ -9,7 +9,7 @@ use stellar_xdr::next::{Hash, LedgerEntry, Limits, ReadXdr, ScAddress, ScVal};
 
 //use sha2::{Digest, Sha256};
 use std::{
-    borrow::{Borrow, BorrowMut}, cell::{Ref, RefCell, RefMut}, num::Wrapping, rc::{Rc, Weak}
+    borrow::{Borrow, BorrowMut}, cell::{Ref, RefCell, RefMut}, num::Wrapping, rc::{Rc, Weak}, sync::mpsc::Sender
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
@@ -86,6 +86,10 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// Host id.
     pub id: i64,
 
+    /// Transmitter
+    pub transmitter: Option<Sender<Vec<u8>>>,
+    
+    /// Result of the invocation. Currently this can only be a string.
     pub result: RefCell<String>,
 
     /// Latest ledger close meta. This is set as optional as
@@ -125,9 +129,10 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     /// and the entity it is bound to. For instance, in Mercury
     /// the host id is the id of a Mercury user. This is needed to
     /// implement role constraints in Zephyr.
-    pub fn from_id(id: i64) -> Result<Self> {
+    pub fn from_id(id: i64, transmitter: Sender<Vec<u8>>) -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id,
+            transmitter: Some(transmitter),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
@@ -147,6 +152,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
     fn mocked() -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id: 0,
+            transmitter: None,
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
@@ -574,6 +580,35 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         };
         
         Self::write_to_memory(caller, &read)
+    }
+
+    /// Sends a message to any receiver whose sender has been provided to the
+    /// host object.
+    pub fn send_message(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
+        let host = caller.data();
+
+        let message = {
+            let memory = {
+                let context = host.0.context.borrow();
+                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let mem_manager = &vm.memory_manager;
+
+                mem_manager.memory
+            };
+
+            let segment = (offset, size);
+            Self::read_segment_from_memory(&memory, &caller, segment)?
+        };
+
+        let tx = if let Some(sender) = &host.0.transmitter {
+            sender
+        } else {
+            return Err(HostError::NoTransmitter.into())
+        };
+
+        tx.send(message)?;
+
+        Ok(())
     }
 
     /// Returns all the host functions that must be defined in the linker.

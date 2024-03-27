@@ -27,6 +27,9 @@ pub enum HostError {
     NoLedgerEntry,
 
     #[error("Invalid types found on function result")]
-    InvalidFunctionResult
+    InvalidFunctionResult,
+
+    #[error("Tried using the transmitter but didn't provide one")]
+    NoTransmitter
 }
 
