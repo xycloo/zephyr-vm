@@ -9,7 +9,7 @@ async fn main() {
         let code = { read("/mnt/storagehdd/projects/master/zephyr/target/wasm32-unknown-unknown/release/entries_filter.wasm").unwrap() };
         let execution = ExecutionWrapper::new(&code);
 
-        let res = execution.execute_function(&body.fname);
+        let res = execution.reproduce_async_runtime(&body.fname).await;
 
         Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(res, warp::http::StatusCode::OK))
     });

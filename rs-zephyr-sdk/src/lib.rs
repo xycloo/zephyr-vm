@@ -18,7 +18,7 @@ use thiserror::Error;
 pub use ledger_meta::EntryChanges;
 pub use stellar_xdr;
 pub use database::Condition;
-pub use rs_zephyr_common::ZephyrVal;
+pub use rs_zephyr_common::{ZephyrVal, http::{AgnosticRequest, Method}};
 pub use bincode;
 pub use macros::DatabaseInteract as DatabaseDerive;
 
@@ -47,6 +47,10 @@ extern "C" {
     #[allow(improper_ctypes)]
     #[link_name = "conclude"]
     pub fn conclude_host(offset: i64, size: i64);
+
+    #[allow(improper_ctypes)]
+    #[link_name = "tx_send_message"]
+    pub fn tx_send_message(offset: i64, size: i64) -> i64;
 
     #[allow(improper_ctypes)] // we alllow as we enabled multi-value
     #[link_name = "read_raw"]
@@ -130,6 +134,19 @@ pub struct EnvClient {
 
 // Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
+    pub fn send_web_request(&self, request: AgnosticRequest) {
+        let serialized = bincode::serialize(&request).unwrap();
+        
+        let res = unsafe {
+            tx_send_message(
+                serialized.as_ptr() as i64, 
+                serialized.len() as i64
+            )
+        };
+
+        SdkError::express_from_status(res).unwrap()
+    }
+    
     pub fn conclude<T: Serialize>(&self, result: T) {
         let v = bincode::serialize(&serde_json::to_string(&result).unwrap()).unwrap();
         unsafe {

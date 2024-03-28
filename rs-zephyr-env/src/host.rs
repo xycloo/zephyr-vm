@@ -6,6 +6,7 @@
 use anyhow::{Result, anyhow};
 use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
 use stellar_xdr::next::{Hash, LedgerEntry, Limits, ReadXdr, ScAddress, ScVal};
+use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};
 use std::{
@@ -39,6 +40,8 @@ mod byte_utils {
         [byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]
     }
 }
+
+type ZephyrRelayer = UnboundedSender<Vec<u8>>;
 
 /// Information about the entry point function. This
 /// function is exported by the binary with the given
@@ -87,7 +90,7 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     pub id: i64,
 
     /// Transmitter
-    pub transmitter: Option<Sender<Vec<u8>>>,
+    pub transmitter: RefCell<Option<ZephyrRelayer>>,
     
     /// Result of the invocation. Currently this can only be a string.
     pub result: RefCell<String>,
@@ -129,10 +132,10 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     /// and the entity it is bound to. For instance, in Mercury
     /// the host id is the id of a Mercury user. This is needed to
     /// implement role constraints in Zephyr.
-    pub fn from_id(id: i64, transmitter: Sender<Vec<u8>>) -> Result<Self> {
+    pub fn from_id(id: i64) -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id,
-            transmitter: Some(transmitter),
+            transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
@@ -152,7 +155,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
     fn mocked() -> Result<Self> {
         Ok(Self(Rc::new(HostImpl {
             id: 0,
-            transmitter: None,
+            transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
             shielded_store: RefCell::new(ShieldedStore::default()),
@@ -200,6 +203,17 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         *current.borrow_mut() = Some(ledger_close_meta);
 
         Ok(())
+    }
+
+    /// Adds a transmitter that will be used to send message to the
+    /// associated receiver once every time the [`Self::send_message`]
+    /// host is called.
+    /// 
+    /// Current behaviour replaces any existing transmitter.
+    pub fn add_transmitter(&mut self, transmitter: ZephyrRelayer) {
+        let current = &self.0.transmitter;
+        
+        *current.borrow_mut() = Some(transmitter);
     }
 
     /// Returns a reference to the host's budget implementation.
@@ -600,12 +614,10 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             Self::read_segment_from_memory(&memory, &caller, segment)?
         };
 
-        let tx = if let Some(sender) = &host.0.transmitter {
-            sender
-        } else {
-            return Err(HostError::NoTransmitter.into())
-        };
-
+        
+        let tx = host.0.transmitter.borrow();
+        let tx = tx.as_ref().ok_or_else(|| HostError::NoTransmitter)?;
+    
         tx.send(message)?;
 
         Ok(())
@@ -633,7 +645,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
     /// writes it to the module's memory. Returns the offset and the size of the bytes
     /// written in the binary's memory.
-    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 10] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 11] {
         let mut store = store;
 
         let db_write_fn = {
@@ -760,6 +772,24 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             }
         };
 
+        let send_message_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+                let result = Host::send_message(caller, offset, size);
+
+                if let Ok(_) = result {
+                    ZephyrStatus::Success as i64
+                } else {
+                    ZephyrStatus::from(result.err().unwrap()) as i64
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "tx_send_message",
+                wrapped
+            }
+        };
+
         let log_fn = {
             let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i64| {
                 println!("Logged: {}", param);
@@ -821,7 +851,8 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             read_contract_data_entry_by_contract_id_and_key_fn,
             read_contract_instance_fn,
             read_contract_entries_fn,
-            conclude_fn
+            conclude_fn,
+            send_message_fn
         ]
     }
     

@@ -1,4 +1,4 @@
-use rs_zephyr_sdk::{utils, EnvClient};
+use rs_zephyr_sdk::{utils, AgnosticRequest, EnvClient};
 use serde::{Deserialize, Serialize};
 use stellar_xdr::next::{LedgerEntry, LedgerEntryData, ScSymbol, ScVal};
 
@@ -38,6 +38,16 @@ pub extern "C" fn top_holders() {
             None
         })
         .collect();
+
+    
+    let request = AgnosticRequest {
+        url: "https://tdep.requestcatcher.com/test".into(),
+        body: Some("From Zephyr".into()),
+        method: rs_zephyr_sdk::Method::Post,
+        headers: vec![("Test".into(), "Zephyr".into())]
+    };
+    
+    env.send_web_request(request);
 
     env.conclude(Result {
         count: top_holders.len(),

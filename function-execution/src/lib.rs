@@ -1,9 +1,10 @@
-use std::rc::Rc;
-
-use rs_zephyr_common::ContractDataEntry;
+use std::{rc::Rc, str::FromStr};
+use reqwest::header::{HeaderMap, HeaderName};
+use rs_zephyr_common::{http::{AgnosticRequest, Method}, ContractDataEntry};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use stellar_xdr::next::{LedgerEntry, Limits, ReadXdr, ScAddress, ScVal, WriteXdr};
+use tokio::sync::mpsc::UnboundedSender;
 use zephyr::{db::ledger::LedgerStateRead, host::Host, testutils::database::MercuryDatabase, vm::Vm, ZephyrMock};
 
 #[derive(Clone)]
@@ -82,9 +83,57 @@ impl ExecutionWrapper {
         }
     }
 
-    pub fn execute_function(&self, fname: &str) -> String {
-        let host = Host::<MercuryDatabase, LedgerReader>::mocked().unwrap();
+    pub async fn reproduce_async_runtime(&self, fname: &str) -> String {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         
+        let resp = self.execute_function(fname, tx);
+        
+        let _ = tokio::spawn(async move {
+            println!("test");
+            while let Some(message) = rx.recv().await {
+                let request: AgnosticRequest = bincode::deserialize(&message).unwrap();
+                let client = reqwest::Client::new();
+                
+                let mut headers = HeaderMap::new();
+                for (k, v) in &request.headers {
+                    
+                    headers.insert(HeaderName::from_str(&k).unwrap(), v.parse().unwrap());
+                }
+
+                let builder = match request.method {
+                    Method::Get => {
+                        let builder = client.get(&request.url).headers(headers);
+
+                        if let Some(body) = &request.body {
+                            builder.body(body.clone())
+                        } else {
+                            builder
+                        }
+                    },
+
+                    Method::Post => {
+                        let builder = client.post(&request.url).headers(headers);
+
+                        if let Some(body) = &request.body {
+                            builder.body(body.clone())
+                        } else {
+                            builder
+                        }
+                    }
+                };
+
+                // We ignore the result of the request.
+                let _ = builder.send().await;
+            }
+        }).await;
+
+        resp
+    }
+
+    pub fn execute_function(&self, fname: &str, tx: UnboundedSender<Vec<u8>>) -> String {
+        let mut host = Host::<MercuryDatabase, LedgerReader>::mocked().unwrap();
+        host.add_transmitter(tx);
+
         let start = std::time::Instant::now();
         let vm = Vm::new(&host, &self.binary).unwrap();
         
@@ -104,19 +153,19 @@ mod test {
 
     use crate::ExecutionWrapper;
 
-    #[test]
-    fn run_instance_getter() {
+    #[tokio::test]
+    async fn run_instance_getter() {
         let code = { read("../target/wasm32-unknown-unknown/release/simple.wasm").unwrap() };
         let execution = ExecutionWrapper::new(&code);
 
-        execution.execute_function("mytest");
+        execution.reproduce_async_runtime("mytest").await;
     }
 
-    #[test]
-    fn run_entries_filter() {
+    #[tokio::test]
+    async fn run_entries_filter() {
         let code = { read("../target/wasm32-unknown-unknown/release/entries_filter.wasm").unwrap() };
         let execution = ExecutionWrapper::new(&code);
 
-        execution.execute_function("top_holders");
+        execution.reproduce_async_runtime("top_holders").await;
     }
 }

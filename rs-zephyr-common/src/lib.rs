@@ -3,7 +3,7 @@
 //! Zephyr and Mercury due to the latter's closed-source nature.
 
 pub mod wrapping;
-
+pub mod http;
 
 pub fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
