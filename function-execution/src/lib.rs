@@ -89,7 +89,6 @@ impl ExecutionWrapper {
         let resp = self.execute_function(fname, tx);
         
         let _ = tokio::spawn(async move {
-            println!("test");
             while let Some(message) = rx.recv().await {
                 let request: AgnosticRequest = bincode::deserialize(&message).unwrap();
                 let client = reqwest::Client::new();
@@ -167,5 +166,35 @@ mod test {
         let execution = ExecutionWrapper::new(&code);
 
         execution.reproduce_async_runtime("top_holders").await;
+    }
+
+    /// Simple reference impl for joined tokio handles.
+    /// Can be useful when working with zephyr.
+    mod simple_join_job {
+        use std::time::Duration;
+
+        async fn test_spawn_internal(v: Vec<String>) {
+            let mut handles = Vec::new();
+            
+            for val in v {
+                let t = tokio::spawn(async move {
+                    println!("{val}");
+                    let _ = tokio::time::sleep(Duration::from_secs(10)).await;
+                });
+
+                handles.push(t)
+            }
+
+            for job in handles {
+                job.await;
+            }
+        }
+
+        #[tokio::test]
+        async fn test_spawn() {
+            let v = vec![String::from("test"), String::from("tes3"), String::from("tesk")];
+
+            test_spawn_internal(v).await;
+        }
     }
 }
