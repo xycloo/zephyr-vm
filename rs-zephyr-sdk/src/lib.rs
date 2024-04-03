@@ -15,6 +15,7 @@ use std::{alloc::{alloc, Layout}, convert::TryInto};
 use stellar_xdr::next::{LedgerEntry, Limits, ReadXdr, ScVal, WriteXdr};
 use thiserror::Error;
 
+//pub use soroban_env_host;
 pub use ledger_meta::EntryChanges;
 pub use stellar_xdr;
 pub use database::Condition;
@@ -43,6 +44,10 @@ extern "C" {
     #[allow(improper_ctypes)]
     #[link_name = "read_contract_entries_by_contract"]
     pub fn read_contract_entries_by_contract(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64, i64);
+
+    #[allow(improper_ctypes)]
+    #[link_name = "read_contract_entries_by_contract_to_env"]
+    pub fn read_contract_entries_by_contract_to_env(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64);
 
     #[allow(improper_ctypes)]
     #[link_name = "conclude"]
@@ -75,8 +80,8 @@ extern "C" {
     pub fn log(param: i64);
 }
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+//#[global_allocator]
+//static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[derive(Clone, Debug, Copy, Error)]
 pub enum SdkError {
@@ -130,6 +135,7 @@ impl TypeWrap {
 #[derive(Clone)]
 pub struct EnvClient {
     pub xdr: Option<stellar_xdr::next::LedgerCloseMeta>,
+    //pub inner_soroban_host: soroban_env_host::Host,
 }
 
 // Note: some methods take self as param though it's not needed yet.

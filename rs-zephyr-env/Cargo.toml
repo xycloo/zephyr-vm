@@ -4,7 +4,7 @@ version = "0.0.1-rc1"
 edition = "2021"
 
 [dependencies]
-wasmi = "0.31.1"
+wasmi = { version = "0.31.1" }
 # wasmtime = "16.0.0"
 anyhow = "1.0.75"
 thiserror = "1.0.48"
@@ -15,8 +15,22 @@ bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.7.0"
 rs-zephyr-common = {path="../rs-zephyr-common"}
-stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
+#stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
 tokio = {version = "1.0", features = ["full"]}
+
+[dependencies.stellar-xdr]
+version = "=20.1.0"
+git = "https://github.com/stellar/rs-stellar-xdr"
+rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
+features=["next", "curr", "serde", "base64"]
+
+[dependencies.soroban-env-host]
+path = "../../rs-soroban-env/soroban-env-host"
+features = ["testutils", "next"]
+
+[dependencies.soroban-env-macros]
+path = "../../rs-soroban-env/soroban-env-macros"
+
 
 [features]
 default = ["testutils"]

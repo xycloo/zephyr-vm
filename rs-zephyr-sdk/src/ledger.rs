@@ -1,7 +1,8 @@
 use rs_zephyr_common::{wrapping::WrappedMaxBytes, ContractDataEntry};
+use soroban_sdk::{FromVal, Map, Val};
 use stellar_xdr::next::{Limits, ScVal, WriteXdr};
 
-use crate::{read_contract_data_entry_by_contract_id_and_key, read_contract_entries_by_contract, read_contract_instance, EnvClient, SdkError};
+use crate::{read_contract_data_entry_by_contract_id_and_key, read_contract_entries_by_contract, read_contract_entries_by_contract_to_env, read_contract_instance, EnvClient, SdkError};
 
 
 impl EnvClient {
@@ -44,5 +45,15 @@ impl EnvClient {
         let slice = unsafe { core::slice::from_raw_parts(memory, size as usize) };
 
         bincode::deserialize::<Vec<ContractDataEntry>>(slice).map_err(|_| SdkError::Conversion)
+    }
+
+    pub fn read_contract_entries_to_env(&self, env: &soroban_sdk::Env, contract: [u8; 32]) -> Result<Map<Val, Val>, SdkError> {
+        let contract_parts = WrappedMaxBytes::array_to_max_parts::<4>(&contract);
+        
+        let (status, mapobject ) = unsafe { read_contract_entries_by_contract_to_env(contract_parts[0], contract_parts[1], contract_parts[2], contract_parts[3]) };
+
+        SdkError::express_from_status(status)?;
+
+        Ok(Map::from_val(env, &Val::from_payload(mapobject as u64)))
     }
 }

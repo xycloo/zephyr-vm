@@ -55,7 +55,7 @@ pub struct Vm<DB: ZephyrDatabase, L: LedgerStateRead> {
 }
 
 #[allow(dead_code)]
-impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead + Clone> Vm<DB, L> {
+impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static> Vm<DB, L> {
     /// Creates and instantiates the VM.
     pub fn new(host: &Host<DB, L>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
         let mut config = wasmi::Config::default();

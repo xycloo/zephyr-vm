@@ -5,7 +5,10 @@
 
 use anyhow::{Result, anyhow};
 use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
-use stellar_xdr::next::{Hash, LedgerEntry, Limits, ReadXdr, ScAddress, ScVal};
+use soroban_env_host::{CheckedEnvArg, Env, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
+use soroban_env_host::wasmi as soroban_wasmi;
+//use soroban_sdk::{IntoVal, Symbol, Val};
+use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, Limits, ReadXdr, ScAddress, ScVal};
 use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};
@@ -14,6 +17,7 @@ use std::{
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
+use crate::soroban_host_gen;
 use crate::{
     budget::Budget,
     db::{
@@ -119,6 +123,9 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
 
     /// Host pseudo stack implementation.
     pub stack: RefCell<Stack>,
+
+    /// Wrapper for the Soroban Host Environment
+    pub soroban: RefCell<soroban_env_host::Host>,
 }
 
 /// Zephyr Host State.
@@ -145,6 +152,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::zephyr_standard()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
+            soroban: RefCell::new(soroban_env_host::Host::default())
         })))
     }
 }
@@ -165,6 +173,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
             entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::mocked()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
+            soroban: RefCell::new(soroban_env_host::Host::default())
         })))
     }
 }
@@ -184,8 +193,28 @@ pub struct FunctionInfo {
     pub wrapped: Func,
 }
 
+/// Wrapper function information.
+/// This object is sent to the VM object when the Virtual Machine
+/// is created to tell the linker which host functions to define.
+#[derive(Clone)]
+pub struct SorobanTempFunctionInfo<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> {
+    /// Module name.
+    pub module: &'static str,
+
+    /// Function name.
+    pub func: &'static str,
+
+    /// Func object. Contains the function's implementation.
+    pub wrapped: fn(&mut Store<Host<DB, L>>) -> Func,
+}
+
 #[allow(dead_code)]
-impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
+impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB, L> {
+    pub fn soroban_host(caller: Caller<Self>) -> soroban_env_host::Host {
+        let host = caller.data();
+        host.0.soroban.borrow().to_owned()
+    }
+
     /// Loads the ledger close meta bytes of the ledger the Zephyr VM will have
     /// access to.
     ///
@@ -596,6 +625,32 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         Self::write_to_memory(caller, &read)
     }
 
+    pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
+        let host = caller.data();
+    
+        let contract = ScAddress::Contract(Hash(contract));
+        let ledger = &host.0.ledger.0.ledger;
+
+        let data = ledger.read_contract_data_entries_by_contract_id(contract);
+
+        let soroban = Self::soroban_host(caller);
+        //let mut current = soroban.get_ledger_info().unwrap().unwrap_or_default();
+        let map = soroban.map_new().unwrap();
+
+        for entry in data {
+            let LedgerEntryData::ContractData(d) = entry.entry.data else {
+                panic!("invalid xdr")
+            };
+
+            let key = soroban.to_valid_host_val(&d.key).unwrap();
+            let val = soroban.to_valid_host_val(&d.key).unwrap();
+
+            soroban.map_put(map, key, val);
+        };
+
+        Ok(map.as_val().get_payload() as i64)
+    }
+
     /// Sends a message to any receiver whose sender has been provided to the
     /// host object.
     pub fn send_message(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
@@ -623,6 +678,8 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
         Ok(())
     }
 
+   
+
     /// Returns all the host functions that must be defined in the linker.
     /// This should be the only public function related to foreign functions
     /// provided by the VM, the specific host functions should remain private.
@@ -645,7 +702,7 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
     /// - Read ledger close meta: Reads the host's latest ledger meta (if present) and
     /// writes it to the module's memory. Returns the offset and the size of the bytes
     /// written in the binary's memory.
-    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> [FunctionInfo; 11] {
+    pub fn host_functions(&self, store: &mut Store<Host<DB, L>>) -> Vec<FunctionInfo> {
         let mut store = store;
 
         let db_write_fn = {
@@ -760,6 +817,25 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             }
         };
 
+        let read_contract_entries_to_env_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64| {
+                let contract = WrappedMaxBytes::array_from_max_parts::<32>(&[contract_part_1, contract_part_2, contract_part_3, contract_part_4]);
+                let result = Host::read_contract_entries_to_env(caller, contract);
+                
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_contract_entries_by_contract_to_env",
+                wrapped
+            }
+        };
+
         let conclude_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
                 Host::write_result(caller, offset, size);
@@ -798,6 +874,56 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             FunctionInfo {
                 module: "env",
                 func: "zephyr_logger",
+                wrapped,
+            }
+        };
+
+        let wbin_descr_fn = {
+            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
+                println!("placeholder describe: {}", param);
+            });
+
+            FunctionInfo {
+                module: "__wbindgen_placeholder__",
+                func: "__wbindgen_describe",
+                wrapped,
+            }
+        };
+
+        let wbin_throw_fn = {
+            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32, param1: i32| {
+                println!("placeholder throw: {}", param);
+            });
+
+            FunctionInfo {
+                module: "__wbindgen_placeholder__",
+                func: "__wbindgen_throw",
+                wrapped,
+            }
+        };
+
+        let wbin_tab_grow_fn = {
+            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
+                println!("table grow: {}", param);
+
+                param
+            });
+
+            FunctionInfo {
+                module: "__wbindgen_externref_xform__",
+                func: "__wbindgen_externref_table_grow",
+                wrapped,
+            }
+        };
+
+        let wbin_tab_set_null_fn = {
+            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
+                println!("table grow: {}", param);
+            });
+
+            FunctionInfo {
+                module: "__wbindgen_externref_xform__",
+                func: "__wbindgen_externref_table_set_null",
                 wrapped,
             }
         };
@@ -841,7 +967,9 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             }
         };
 
-        [
+        let mut soroban_functions = soroban_host_gen::generate_host_fn_infos(store);
+        
+        let mut arr = vec![
             db_write_fn,
             db_read_fn,
             db_update_fn,
@@ -851,9 +979,19 @@ impl<DB: ZephyrDatabase + Clone, L: LedgerStateRead> Host<DB, L> {
             read_contract_data_entry_by_contract_id_and_key_fn,
             read_contract_instance_fn,
             read_contract_entries_fn,
+            read_contract_entries_to_env_fn,
             conclude_fn,
-            send_message_fn
-        ]
+            send_message_fn,
+
+            wbin_descr_fn,
+            wbin_throw_fn,
+            wbin_tab_grow_fn,
+            wbin_tab_set_null_fn,
+        ];
+
+        soroban_functions.append(&mut arr);
+
+        soroban_functions
     }
     
     fn write_result(caller: Caller<Self>, offset: i64, size: i64) {

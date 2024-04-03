@@ -11,4 +11,12 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.49"
 rs-zephyr-common = {path="../rs-zephyr-common"}
 macros = {path="../macros"}
-serde_json = "1.0.115"
+serde_json = "1.0"
+
+#[dependencies.soroban-env-host]
+#version = "=20.3.0"
+#features = ["next"]
+
+[dependencies.soroban-sdk]
+version = "=20.5.0"
+features = ["alloc"]

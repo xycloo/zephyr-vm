@@ -11,6 +11,8 @@ pub mod db;
 pub mod host;
 pub mod vm;
 
+mod soroban_host_gen;
+
 #[allow(missing_docs)]
 pub mod error;
 
