@@ -5,7 +5,8 @@
 
 use anyhow::{Result, anyhow};
 use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
-use soroban_env_host::{CheckedEnvArg, Env, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
+use soroban_env_host::budget::AsBudget;
+use soroban_env_host::{CheckedEnvArg, ContractFunctionSet, Env, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
 use soroban_env_host::wasmi as soroban_wasmi;
 //use soroban_sdk::{IntoVal, Symbol, Val};
 use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, Limits, ReadXdr, ScAddress, ScVal};
@@ -42,6 +43,15 @@ mod byte_utils {
         let byte7 = ((value >> 56) & 0xFF) as u8;
 
         [byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]
+    }
+}
+
+
+pub struct ZephyrTestContract;
+
+impl ContractFunctionSet for ZephyrTestContract {
+    fn call(&self, _func: &Symbol, host: &soroban_env_host::Host, _args: &[Val]) -> Option<Val> {
+        None
     }
 }
 
@@ -140,6 +150,14 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     /// the host id is the id of a Mercury user. This is needed to
     /// implement role constraints in Zephyr.
     pub fn from_id(id: i64) -> Result<Self> {
+        let host = soroban_env_host::Host::test_host_with_recording_footprint();
+        host.as_budget().reset_unlimited().unwrap();
+        let test_contract = Rc::new(ZephyrTestContract {});
+        let dummy_id = [0; 32];
+        let dummy_address = ScAddress::Contract(Hash(dummy_id));
+        let contract_id = host.add_host_object(dummy_address).unwrap();
+        host.register_test_contract(contract_id, test_contract);
+        
         Ok(Self(Rc::new(HostImpl {
             id,
             transmitter: RefCell::new(None),
@@ -152,7 +170,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::zephyr_standard()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
-            soroban: RefCell::new(soroban_env_host::Host::default())
+            soroban: RefCell::new(host)
         })))
     }
 }
@@ -161,6 +179,14 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
     /// Creates a Host object designed to be used in tests with potentially
     /// mocked data such as host id, databases and context.
     fn mocked() -> Result<Self> {
+        let host = soroban_env_host::Host::test_host_with_recording_footprint();
+        host.as_budget().reset_unlimited().unwrap();
+        let test_contract = Rc::new(ZephyrTestContract {});
+        let dummy_id = [0; 32];
+        let dummy_address = ScAddress::Contract(Hash(dummy_id));
+        let contract_id = host.add_host_object(dummy_address).unwrap();
+        host.register_test_contract(contract_id, test_contract);
+
         Ok(Self(Rc::new(HostImpl {
             id: 0,
             transmitter: RefCell::new(None),
@@ -173,7 +199,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
             entry_point_info: RefCell::new(InvokedFunctionInfo::zephyr_standard()?),
             context: RefCell::new(VmContext::mocked()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
-            soroban: RefCell::new(soroban_env_host::Host::default())
+            soroban: RefCell::new(host)
         })))
     }
 }
@@ -628,27 +654,48 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
         let host = caller.data();
     
-        let contract = ScAddress::Contract(Hash(contract));
-        let ledger = &host.0.ledger.0.ledger;
+        let (soroban, val) = {
+            let contract = ScAddress::Contract(Hash(contract));
+            let ledger = &host.0.ledger.0.ledger;
 
-        let data = ledger.read_contract_data_entries_by_contract_id(contract);
+            let data = ledger.read_contract_data_entries_by_contract_id(contract);
 
-        let soroban = Self::soroban_host(caller);
-        //let mut current = soroban.get_ledger_info().unwrap().unwrap_or_default();
-        let map = soroban.map_new().unwrap();
+            let soroban = host.0.soroban.borrow().to_owned();
+            soroban.as_budget().reset_unlimited().unwrap();
 
-        for entry in data {
-            let LedgerEntryData::ContractData(d) = entry.entry.data else {
-                panic!("invalid xdr")
-            };
+            soroban.enable_debug().unwrap();
+            //let mut current = soroban.get_ledger_info().unwrap().unwrap_or_default();
+            //let map = soroban.map_new().unwrap();
 
-            let key = soroban.to_valid_host_val(&d.key).unwrap();
-            let val = soroban.to_valid_host_val(&d.key).unwrap();
+            let val = soroban.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                let mut map = soroban.map_new().unwrap();
+            
+                for entry in data {
+                    let LedgerEntryData::ContractData(d) = entry.entry.data else {
+                        panic!("invalid xdr")
+                    };
 
-            soroban.map_put(map, key, val);
+                    if d.key != ScVal::LedgerKeyContractInstance {
+                        let key = soroban.to_valid_host_val(&d.key).unwrap();
+                        let val = soroban.to_valid_host_val(&d.val).unwrap();
+
+                        map = soroban.map_put(map, key, val).unwrap();
+                    }
+                };
+
+                soroban.enable_debug().unwrap();
+                
+                Ok(map.into())
+            }).unwrap().get_payload() as i64;
+
+            let map = MapObject::try_from_val(&soroban, &Val::from_payload(val as u64)).unwrap();
+            
+            (soroban, val)
         };
 
-        Ok(map.as_val().get_payload() as i64)
+        *host.0.soroban.borrow_mut() = soroban;
+
+        Ok(val)
     }
 
     /// Sends a message to any receiver whose sender has been provided to the

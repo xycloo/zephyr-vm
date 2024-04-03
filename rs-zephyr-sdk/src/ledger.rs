@@ -1,8 +1,8 @@
 use rs_zephyr_common::{wrapping::WrappedMaxBytes, ContractDataEntry};
-use soroban_sdk::{FromVal, Map, Val};
+use soroban_sdk::{FromVal, Map, TryFromVal, Val};
 use stellar_xdr::next::{Limits, ScVal, WriteXdr};
 
-use crate::{read_contract_data_entry_by_contract_id_and_key, read_contract_entries_by_contract, read_contract_entries_by_contract_to_env, read_contract_instance, EnvClient, SdkError};
+use crate::{log, read_contract_data_entry_by_contract_id_and_key, read_contract_entries_by_contract, read_contract_entries_by_contract_to_env, read_contract_instance, EnvClient, SdkError};
 
 
 impl EnvClient {
@@ -54,6 +54,8 @@ impl EnvClient {
 
         SdkError::express_from_status(status)?;
 
-        Ok(Map::from_val(env, &Val::from_payload(mapobject as u64)))
+        Ok(Map::try_from_val(env, &Val::from_payload(mapobject as u64)).unwrap())
+        
+        //Ok(Map::new(env))
     }
 }

@@ -156,6 +156,7 @@ impl EnvClient {
     pub fn conclude<T: Serialize>(&self, result: T) {
         let v = bincode::serialize(&serde_json::to_string(&result).unwrap()).unwrap();
         unsafe {
+            log(0);
             conclude_host(v.as_ptr() as i64, v.len() as i64)
         }
     }

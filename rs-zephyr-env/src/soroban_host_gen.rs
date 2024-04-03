@@ -10,7 +10,7 @@ use soroban_env_host::{
     AddressObject, Bool, BytesObject, DurationObject, Error, I128Object, I256Object, I256Val,
     I64Object, MapObject, StorageType, StringObject, Symbol, SymbolObject, TimepointObject,
     U128Object, U256Object, U256Val, U32Val, U64Object, U64Val, Val, VecObject, Void, HostError, 
-    VmCaller, WasmiMarshal
+    VmCaller, WasmiMarshal, TryFromVal
 };
 
 use soroban_env_host::{
@@ -19,9 +19,9 @@ use soroban_env_host::{
 };
 
 use wasmi::{Func, Store};
+use stellar_xdr::next::Hash;
 
-
-pub(crate) trait RelativeObjectConversion: WasmiMarshal {
+pub(crate) trait RelativeObjectConversion: WasmiMarshal + Clone {
     fn absolute_to_relative(self, _host: &SorobanHost) -> Result<Self, HostError> {
         Ok(self)
     }
@@ -35,10 +35,16 @@ pub(crate) trait RelativeObjectConversion: WasmiMarshal {
                 ScErrorCode::InvalidInput,
             )))
         })?;
-        Ok(val.relative_to_absolute(host)?)
+
+        let backup = val.clone();
+
+        Ok(val.relative_to_absolute(host).unwrap_or(backup))
     }
     fn marshal_relative_from_self(self, host: &SorobanHost) -> Result<soroban_env_host::wasmi::Value, Trap> {
-        let rel = self.absolute_to_relative(host)?;
+        let backup = self.clone();
+
+        let rel = self.absolute_to_relative(host).unwrap_or(backup);
+        
         Ok(Self::marshal_from_self(rel))
     }
 }
@@ -198,90 +204,122 @@ macro_rules! generate_dispatch_functions {
 
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(caller);
 
-                    // This is an additional protocol version guardrail that
-                    // should not be necessary. Any wasm contract containing a
-                    // call to an out-of-protocol-range host function should
-                    // have been rejected by the linker during VM instantiation.
-                    // This is just an additional guard rail for future proof.
-                    //$( host.check_protocol_version_lower_bound($min_proto)?; )?
-                    //$( host.check_protocol_version_upper_bound($max_proto)?; )?
+                    let effects = || {
+                        // This is an additional protocol version guardrail that
+                        // should not be necessary. Any wasm contract containing a
+                        // call to an out-of-protocol-range host function should
+                        // have been rejected by the linker during VM instantiation.
+                        // This is just an additional guard rail for future proof.
+                        //$( host.check_protocol_version_lower_bound($min_proto)?; )?
+                        //$( host.check_protocol_version_upper_bound($max_proto)?; )?
 
-                    /*if host.tracing_enabled()
-                    {
-                        #[allow(unused)]
-                        let trace_args = ($(
-                            match <$type>::try_marshal_from_relative_value(Value::I64($arg), &host) {
-                                Ok(val) => TraceArg::Ok(val),
-                                Err(_) => TraceArg::Bad($arg),
-                            }
-                        ),*);
-                        let hook_args: &[&dyn std::fmt::Debug] = homogenize_tuple!(trace_args, ($($arg),*));
-                        host.trace_env_call(&core::stringify!($fn_id), hook_args)?;
-                    }*/
+                        /*if host.tracing_enabled()
+                        {
+                            #[allow(unused)]
+                            let trace_args = ($(
+                                match <$type>::try_marshal_from_relative_value(Value::I64($arg), &host) {
+                                    Ok(val) => TraceArg::Ok(val),
+                                    Err(_) => TraceArg::Bad($arg),
+                                }
+                            ),*);
+                            let hook_args: &[&dyn std::fmt::Debug] = homogenize_tuple!(trace_args, ($($arg),*));
+                            host.trace_env_call(&core::stringify!($fn_id), hook_args)?;
+                        }*/
 
-                    // This is where the VM -> Host boundary is crossed.
-                    // We first return all fuels from the VM back to the host such that
-                    // the host maintains control of the budget.
-                    //FuelRefillable::return_fuel_to_host(&mut caller, &host).map_err(|he| Trap::from(he))?;
+                        // This is where the VM -> Host boundary is crossed.
+                        // We first return all fuels from the VM back to the host such that
+                        // the host maintains control of the budget.
+                        //FuelRefillable::return_fuel_to_host(&mut caller, &host).map_err(|he| Trap::from(he))?;
 
-                    // Charge for the host function dispatching: conversion between VM fuel and
-                    // host budget, marshalling values. This does not account for the actual work
-                    // being done in those functions, which are metered individually by the implementation.
-                    //host.charge_budget(ContractCostType::DispatchHostFunction, None)?;
-                    let mut vmcaller = VmCaller::none();
-                    // The odd / seemingly-redundant use of `soroban_env_host::wasmi::Value` here
-                    // as intermediates -- rather than just passing Vals --
-                    // has to do with the fact that some host functions are
-                    // typed as receiving or returning plain _non-val_ i64 or
-                    // u64 values. So the call here has to be able to massage
-                    // both types into and out of i64, and `soroban_env_host::wasmi::Value`
-                    // happens to be a natural switching point for that: we have
-                    // conversions to and from both Val and i64 / u64 for
-                    // soroban_env_host::wasmi::Value.
-                    let res: Result<_, HostError> = host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).unwrap(), &host).unwrap()),*);
-
-                    /*if host.tracing_enabled()
-                    {
-                        let dyn_res: Result<&dyn core::fmt::Debug,&HostError> = match &res {
-                            Ok(ref ok) => Ok(ok),
-                            Err(err) => Err(err)
-                        };
-                        host.trace_env_ret(&core::stringify!($fn_id), &dyn_res)?;
-                    }*/
-
-                    // On the off chance we got an error with no context, we can
-                    // at least attach some here "at each host function call",
-                    // fairly systematically. This will cause the context to
-                    // propagate back through wasmi to its caller.
-                    let res = host.augment_err_result(res);
-
-                    let res = match res {
-                        Ok(ok) => {
-                            let ok = ok.check_env_arg(&host).unwrap();
-                            let val: Value = ok.marshal_relative_from_self(&host).unwrap();
-                            if let Value::I64(v) = val {
-                                Ok((v,))
-                            } else {
-                                Err(BadSignature.into())
-                            }
-                        },
-                        Err(hosterr) => {
-                            // We make a new HostError here to capture the escalation event itself.
-                            let escalation: HostError =
-                                host.error(hosterr.into(),
-                                           concat!("escalating error to VM trap from failed host function call: ",
-                                                   stringify!($fn_id)), &[]);
-                            let trap: Trap = escalation.into();
-                            Err(trap)
-                        }
+                        // Charge for the host function dispatching: conversion between VM fuel and
+                        // host budget, marshalling values. This does not account for the actual work
+                        // being done in those functions, which are metered individually by the implementation.
+                        //host.charge_budget(ContractCostType::DispatchHostFunction, None)?;
+                        let mut vmcaller = VmCaller::none();
+                        // The odd / seemingly-redundant use of `soroban_env_host::wasmi::Value` here
+                        // as intermediates -- rather than just passing Vals --
+                        // has to do with the fact that some host functions are
+                        // typed as receiving or returning plain _non-val_ i64 or
+                        // u64 values. So the call here has to be able to massage
+                        // both types into and out of i64, and `soroban_env_host::wasmi::Value`
+                        // happens to be a natural switching point for that: we have
+                        // conversions to and from both Val and i64 / u64 for
+                        // soroban_env_host::wasmi::Value.
+                        let res: Result<_, HostError> = host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).unwrap(), &host).unwrap()),*);
+                        res
                     };
 
-                    // This is where the Host->VM boundary is crossed.
-                    // We supply the remaining host budget as fuel to the VM.
-                    //let caller = vmcaller.try_mut().map_err(|e| Trap::from(HostError::from(e))).unwrap();
-                    //FuelRefillable::add_fuel_to_vm(caller, &host).map_err(|he| Trap::from(he))?;
+                    
+                    (host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                        let res = effects();
+                        /*if host.tracing_enabled()
+                        {
+                            let dyn_res: Result<&dyn core::fmt::Debug,&HostError> = match &res {
+                                Ok(ref ok) => Ok(ok),
+                                Err(err) => Err(err)
+                            };
+                            host.trace_env_ret(&core::stringify!($fn_id), &dyn_res)?;
+                        }*/
 
-                    res.unwrap()
+                        // On the off chance we got an error with no context, we can
+                        // at least attach some here "at each host function call",
+                        // fairly systematically. This will cause the context to
+                        // propagate back through wasmi to its caller.
+                        /*let res = host.augment_err_result(res);
+
+                        let res = match res {
+                            Ok(ok) => {
+                                let ok = ok.check_env_arg(&host).unwrap();
+                                let val: Value = ok.marshal_relative_from_self(&host).unwrap();
+                                if let Value::I64(v) = val {
+                                    Ok((v,))
+                                } else {
+                                    Err(BadSignature.into())
+                                }
+                            },
+                            Err(hosterr) => {
+                                // We make a new HostError here to capture the escalation event itself.
+                                let escalation: HostError =
+                                    host.error(hosterr.into(),
+                                            concat!("escalating error to VM trap from failed host function call: ",
+                                                    stringify!($fn_id)), &[]);
+                                let trap: Trap = escalation.into();
+                                Err(trap)
+                            }
+                        };
+
+                        // This is where the Host->VM boundary is crossed.
+                        // We supply the remaining host budget as fuel to the VM.
+                        //let caller = vmcaller.try_mut().map_err(|e| Trap::from(HostError::from(e))).unwrap();
+                        //FuelRefillable::add_fuel_to_vm(caller, &host).map_err(|he| Trap::from(he))?;
+
+                        Ok(res.unwrap())*/
+                        let res = match res {
+                            Ok(ok) => {
+                                let ok = ok.check_env_arg(&host).unwrap();
+                                
+                                let val: Value = ok.marshal_relative_from_self(&host).unwrap();
+                                
+                                if let Value::I64(v) = val {
+                                    Ok((v,))
+                                } else {
+                                    Err(BadSignature.into())
+                                }
+                            },
+                            Err(hosterr) => {
+                                // We make a new HostError here to capture the escalation event itself.
+                                let escalation: HostError =
+                                    host.error(hosterr.into(),
+                                            concat!("escalating error to VM trap from failed host function call: ",
+                                                    stringify!($fn_id)), &[]);
+                                let trap: Trap = escalation.into();
+                                Err(trap)
+                            }
+                        };
+
+                        Ok(Val::from_payload(res.unwrap().0 as u64))
+
+                }).unwrap().get_payload() as i64, )
                 }
             )*
         )*
