@@ -90,7 +90,7 @@ impl ZephyrProjectParser {
             format!("./target/wasm32-unknown-unknown/release/{}.wasm", project_name.replace('-', "_"))
         };
         
-        if let Err(_) = self.client.deploy(path).await {
+        if let Err(_) = self.client.deploy(path, true).await {
             return Err(ParserError::WasmDeploymentError.into());
         };
 

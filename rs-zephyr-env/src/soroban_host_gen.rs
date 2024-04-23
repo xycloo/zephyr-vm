@@ -202,8 +202,8 @@ macro_rules! generate_dispatch_functions {
                 {
                     //let _span = tracy_span!(core::stringify!($fn_id));
 
-                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(caller);
-
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    host.enable_debug();
                     let effects = || {
                         // This is an additional protocol version guardrail that
                         // should not be necessary. Any wasm contract containing a
@@ -244,7 +244,7 @@ macro_rules! generate_dispatch_functions {
                         // both types into and out of i64, and `soroban_env_host::wasmi::Value`
                         // happens to be a natural switching point for that: we have
                         // conversions to and from both Val and i64 / u64 for
-                        // soroban_env_host::wasmi::Value.
+                        // soroban_env_host::wasmi::Value.                        
                         let res: Result<_, HostError> = host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).unwrap(), &host).unwrap()),*);
                         res
                     };

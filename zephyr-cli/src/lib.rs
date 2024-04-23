@@ -34,6 +34,9 @@ pub enum Commands {
 
         #[arg(short, long)]
         old_api: Option<bool>,
+
+        #[arg(short, long)]
+        force: Option<bool>,
     },
 }
 
@@ -46,6 +49,7 @@ struct NewZephyrTableClient {
 #[derive(Deserialize, Serialize, Debug)]
 struct CodeUploadClient {
     code: Option<Vec<u8>>,
+    force_replace: Option<bool>
 }
 
 pub struct MercuryClient {
@@ -114,7 +118,7 @@ impl MercuryClient {
         Ok(())
     }
 
-    pub async fn deploy(&self, wasm: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn deploy(&self, wasm: String, force_replace: bool) -> Result<(), Box<dyn std::error::Error>> {
         // Replace "input.wasm" with the path to your Wasm file.
         println!("Reading wasm {}", wasm);
         let mut input_file = File::open(wasm)?;
@@ -123,7 +127,7 @@ impl MercuryClient {
         input_file.read_to_end(&mut buffer)?;
         println!("(Size of program is {})", buffer.len());
 
-        let code = CodeUploadClient { code: Some(buffer) };
+        let code = CodeUploadClient { code: Some(buffer),  force_replace: Some(force_replace)};
 
         // Convert the code object to JSON
         let json_code = serde_json::to_string(&code)?;

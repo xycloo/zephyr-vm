@@ -1,4 +1,4 @@
-use stellar_xdr::next::{GeneralizedTransactionSet, LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionEnvelope, TransactionMeta, TransactionPhase, TransactionResultMeta, TransactionResultResult, TransactionSet, TxSetComponent};
+use stellar_xdr::next::{ContractEvent, GeneralizedTransactionSet, LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionEnvelope, TransactionMeta, TransactionPhase, TransactionResultMeta, TransactionResultResult, TransactionSet, TxSetComponent};
 
 #[derive(Clone)]
 pub struct EntryChanges {
@@ -215,5 +215,21 @@ impl<'a> MetaReader<'a> {
             updated: updated_entries,
             created: created_entries,
         }
+    }
+
+    pub fn soroban_events(&self) -> Vec<ContractEvent> {
+        let mut events = Vec::new();
+        
+        for (_, result) in self.envelopes_with_meta() {
+            if let TransactionMeta::V3(v3) = &result.tx_apply_processing {
+                if let Some(soroban) = &v3.soroban_meta {
+                    for event in soroban.events.iter() {
+                        events.push(event.clone())
+                    }
+                }
+            }
+        }
+
+        events
     }
 }

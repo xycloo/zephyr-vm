@@ -20,10 +20,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match cli.command {
-        Some(Commands::Deploy {target, old_api}) => {
+        Some(Commands::Deploy {target, old_api, force}) => {
             if let Some(true) = old_api {
                 println!("Deploying wasm ...");
-                client.deploy(target.unwrap()).await.unwrap();
+                client.deploy(target.unwrap(), force.unwrap_or(false)).await.unwrap();
                 println!("Successfully deployed Zephyr program.");
             } else {
                 println!("Parsing project configuration ...");

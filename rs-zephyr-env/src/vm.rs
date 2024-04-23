@@ -80,11 +80,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         let mut linker = <Linker<Host<DB, L>>>::new(&engine);
         
         for func_info in host.host_functions(&mut store) {
-            linker.define(
+            // Note: this is just a current workaround.
+            let _ = linker.define(
                 func_info.module,
                 func_info.func,
                 func_info.wrapped,
-            )?;
+            );
         }
         
         // NOTE
@@ -129,6 +130,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
             None => return Err(HostError::ExternNotAFunction.into()),
         };
 
+        println!("\nrunning function\n");
         func.call(
             &mut *store.borrow_mut(),
             entry_point_info.params.as_slice(),

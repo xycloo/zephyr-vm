@@ -8,7 +8,7 @@ pub use ledger_meta::MetaReader;
 pub use rs_zephyr_common::ContractDataEntry;
 
 use database::Database;
-use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
+use rs_zephyr_common::{log::{LogLevel, ZephyrLog}, wrapping::WrappedMaxBytes, RelayedMessageRequest, ZephyrStatus};
 use serde::{Deserialize, Serialize};
 use core::slice;
 use std::{alloc::{alloc, Layout}, convert::TryInto};
@@ -17,6 +17,7 @@ use thiserror::Error;
 
 //pub use soroban_env_host;
 pub use ledger_meta::EntryChanges;
+pub use soroban_sdk;
 pub use stellar_xdr;
 pub use database::Condition;
 pub use rs_zephyr_common::{ZephyrVal, http::{AgnosticRequest, Method}};
@@ -138,10 +139,48 @@ pub struct EnvClient {
     //pub inner_soroban_host: soroban_env_host::Host,
 }
 
+pub struct EnvLogger;
+
+impl EnvLogger {
+    pub fn error(&self, message: impl ToString, data: Option<Vec<u8>>) {
+        let log = ZephyrLog {
+            level: LogLevel::Error,
+            message: message.to_string(),
+            data
+        };
+
+        EnvClient::message_relay(RelayedMessageRequest::Log(log));
+    }
+
+    pub fn debug(&self, message: impl ToString, data: Option<Vec<u8>>) {
+        let log = ZephyrLog {
+            level: LogLevel::Debug,
+            message: message.to_string(),
+            data
+        };
+
+        EnvClient::message_relay(RelayedMessageRequest::Log(log));
+    }
+
+    pub fn warning(&self, message: impl ToString, data: Option<Vec<u8>>) {
+        let log = ZephyrLog {
+            level: LogLevel::Warning,
+            message: message.to_string(),
+            data
+        };
+
+        EnvClient::message_relay(RelayedMessageRequest::Log(log));
+    }
+}
+
 // Note: some methods take self as param though it's not needed yet.
 impl EnvClient {
-    pub fn send_web_request(&self, request: AgnosticRequest) {
-        let serialized = bincode::serialize(&request).unwrap();
+    pub fn log(&self) -> EnvLogger {
+        EnvLogger
+    }
+
+    pub fn message_relay(message: impl Serialize) {
+        let serialized = bincode::serialize(&message).unwrap();
         
         let res = unsafe {
             tx_send_message(
@@ -152,11 +191,17 @@ impl EnvClient {
 
         SdkError::express_from_status(res).unwrap()
     }
+
+    pub fn send_web_request(&self, request: AgnosticRequest) {
+        let message = RelayedMessageRequest::Http(request);
+
+        Self::message_relay(message)
+    }
     
     pub fn conclude<T: Serialize>(&self, result: T) {
         let v = bincode::serialize(&serde_json::to_string(&result).unwrap()).unwrap();
+        
         unsafe {
-            log(0);
             conclude_host(v.as_ptr() as i64, v.len() as i64)
         }
     }

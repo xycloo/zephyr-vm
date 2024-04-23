@@ -14,7 +14,7 @@ sha2 = "0.10.8"
 serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.soroban-sdk]
-version = "=20.5.0"
+path = "../../../../rs-soroban-sdk/soroban-sdk"
 features = ["alloc"]
 
 [lib]

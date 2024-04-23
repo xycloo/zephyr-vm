@@ -168,6 +168,14 @@ mod test {
         execution.reproduce_async_runtime("top_holders").await;
     }
 
+    #[tokio::test]
+    async fn run_alert() {
+        let code = { read("../../zephyr-examples/zephyr-alert/target/wasm32-unknown-unknown/release/zephyr_alert.wasm").unwrap() };
+        let execution = ExecutionWrapper::new(&code);
+
+        execution.reproduce_async_runtime("on_close").await;
+    }
+
     /// Simple reference impl for joined tokio handles.
     /// Can be useful when working with zephyr.
     mod simple_join_job {

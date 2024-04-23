@@ -17,6 +17,8 @@ md5 = "0.7.0"
 rs-zephyr-common = {path="../rs-zephyr-common"}
 #stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
 tokio = {version = "1.0", features = ["full"]}
+log = "0.4.20"
+
 
 [dependencies.stellar-xdr]
 version = "=20.1.0"

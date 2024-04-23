@@ -4,6 +4,7 @@
 
 pub mod wrapping;
 pub mod http;
+pub mod log;
 
 pub fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
@@ -20,6 +21,8 @@ pub enum ZephyrStatus {
     HostConfiguration = 5
 }
 
+use http::AgnosticRequest;
+use log::ZephyrLog;
 use serde::{Deserialize, Serialize};
 use stellar_xdr::next::{LedgerEntry, ScAddress, ScVal};
 use thiserror::Error;
@@ -130,3 +133,9 @@ impl_inner_from!(F32, f32);
 impl_inner_from!(String, String);
 impl_inner_from!(Bytes, Vec<u8>);
 
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum RelayedMessageRequest {
+    Http(AgnosticRequest),
+    Log(ZephyrLog)
+}
