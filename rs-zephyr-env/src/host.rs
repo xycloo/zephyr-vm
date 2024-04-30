@@ -669,6 +669,27 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Self::write_to_memory(caller, &read)
     }
 
+    pub fn scval_to_valid_host_val(caller: Caller<Self>, scval: &ScVal) -> Result<i64> {
+        let host = caller.data();
+    
+        let (soroban, val) = {
+            let soroban = host.0.soroban.borrow().to_owned();
+            soroban.as_budget().reset_unlimited().unwrap();
+
+            soroban.enable_debug().unwrap();
+
+            let val = soroban.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                Ok(soroban.to_valid_host_val(scval).unwrap())
+            }).unwrap().get_payload() as i64;
+            
+            (soroban, val)
+        };
+
+        *host.0.soroban.borrow_mut() = soroban;
+
+        Ok(val)
+    }
+
     pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
         let host = caller.data();
     
@@ -901,6 +922,40 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let scval_to_valid_host_val = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+                let bytes = {
+                    let host: &Self = caller.data();
+                    let memory = {
+                        let context = host.0.context.borrow();
+                        let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                        let mem_manager = &vm.memory_manager;
+
+                        mem_manager.memory
+                    };
+
+                    let segment = (offset, size);
+                    Self::read_segment_from_memory(&memory, &caller, segment).unwrap()
+                };
+                let scval = ScVal::from_xdr(bytes, Limits::none()).unwrap();
+
+                let result = Host::scval_to_valid_host_val(caller, &scval);
+                
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "scval_to_valid_host_val",
+                wrapped
+            }
+        };
+
+
         let conclude_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
                 Host::write_result(caller, offset, size);
@@ -1132,6 +1187,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             read_contract_data_entry_by_contract_id_and_key_fn,
             read_contract_instance_fn,
             read_contract_entries_fn,
+            
+            scval_to_valid_host_val,
             read_contract_entries_to_env_fn,
             conclude_fn,
             send_message_fn,
