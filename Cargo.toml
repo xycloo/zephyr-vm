@@ -11,6 +11,7 @@ members = [
     "examples/functions/entries-filter",
     "zephyr-cli",
     "function-execution",
+    "ingestion-event-catchup",
     "macros"
 ]
 

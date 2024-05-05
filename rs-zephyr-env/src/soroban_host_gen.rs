@@ -299,7 +299,6 @@ macro_rules! generate_dispatch_functions {
                                 let ok = ok.check_env_arg(&host).unwrap();
                                 
                                 let val: Value = ok.marshal_relative_from_self(&host).unwrap();
-                                
                                 if let Value::I64(v) = val {
                                     Ok((v,))
                                 } else {

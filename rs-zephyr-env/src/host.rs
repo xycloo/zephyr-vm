@@ -10,7 +10,7 @@ use soroban_env_host::vm::CustomContextVM;
 use soroban_env_host::{CheckedEnvArg, ContractFunctionSet, Env, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
 use soroban_env_host::wasmi as soroban_wasmi;
 //use soroban_sdk::{IntoVal, Symbol, Val};
-use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, Limits, ReadXdr, ScAddress, ScVal};
+use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, Limits, ReadXdr, ScAddress, ScVal, WriteXdr};
 use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};
@@ -20,6 +20,7 @@ use std::{
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
 use crate::soroban_host_gen::{self, RelativeObjectConversion};
+use crate::vm::MemoryManager;
 use crate::{
     budget::Budget,
     db::{
@@ -259,6 +260,21 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         memory
     }
 
+
+    pub fn get_memory_mut(caller: &mut Caller<Self>) -> Memory {
+        let host = caller.data();
+
+        let memory = {
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let mem_manager = &vm.memory_manager;
+
+            mem_manager.memory
+        };
+
+        memory
+    }
+
     /// Loads the ledger close meta bytes of the ledger the Zephyr VM will have
     /// access to.
     ///
@@ -377,6 +393,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         Ok((offset as i64, data.len() as i64))
     }
+
+    fn write_to_memory_mut(caller: &mut Caller<Self>, pos: u32, contents: &[u8]) -> Result<i64> {
+        let memory = Host::get_memory(caller);
+
+        // TODO: this should actually only grow the linear memory when needed, so check the current
+        // pages and the size of the contents to compute a safe pages size (else error with a growth error).
+        // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
+        //let _ = memory.grow(caller, Pages::new(1000).unwrap());
+        
+        if let Err(error) = memory.write(caller, pos as usize, contents) {
+            return Err(anyhow!(error))
+        };
+
+        Ok((pos + contents.len() as u32) as i64)
+    }
+
 
     // **Note**
     // `write_database_raw` currently directly calls the database implementation
@@ -573,7 +605,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
     fn read_database_raw(caller: Caller<Self>) -> Result<(i64, i64)> {
         let host = caller.data();
-
+        
         let read = {
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
@@ -606,7 +638,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
                 retrn
             };
-
+            
             let user_id = host.get_host_id();
 
             drop(stack);
@@ -677,7 +709,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban.as_budget().reset_unlimited().unwrap();
 
             soroban.enable_debug().unwrap();
-
+            
             let val = soroban.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
                 Ok(soroban.to_valid_host_val(scval).unwrap())
             }).unwrap().get_payload() as i64;
@@ -689,6 +721,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         Ok(val)
     }
+
+    pub fn valid_host_val_to_scval(caller: Caller<Self>, val: Val) -> Result<(i64, i64)> {
+        let host = caller.data();
+    
+        let res = {
+            let soroban = host.0.soroban.borrow().to_owned();
+            soroban.as_budget().reset_unlimited().unwrap();
+
+            soroban.enable_debug().unwrap();
+            let scval = ScVal::try_from_val(&soroban, &val).unwrap();
+            Self::write_to_memory(caller, &scval.to_xdr(Limits::none()).unwrap())
+        };
+
+        res
+    }
+
 
     pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
         let host = caller.data();
@@ -941,6 +989,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
                 let result = Host::scval_to_valid_host_val(caller, &scval);
                 
+                
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res)
                 } else {
@@ -951,6 +1000,24 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             FunctionInfo {
                 module: "env",
                 func: "scval_to_valid_host_val",
+                wrapped
+            }
+        };
+
+        let valid_host_val_to_scval = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, val: i64| {
+                let result = Host::valid_host_val_to_scval(caller, Val::from_payload(val as u64));
+                
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "valid_host_val_to_scval",
                 wrapped
             }
         };
@@ -1131,6 +1198,50 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let symbol_from_linmem = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
+                let vm_ctx = CustomVMCtx::new(&caller);
+                
+                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                host.enable_debug();
+                
+                let effects = || {
+                    let res: Result<_, soroban_env_host::HostError> = host.symbol_new_from_linear_memory_mem(vm_ctx, U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(lm_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(len), &host).unwrap(), &host).unwrap());
+                    res
+                };
+
+                let res = host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                    let res = effects();
+                    let res = match res {
+                        Ok(ok) => {
+                            let ok = ok.check_env_arg(&host).unwrap();
+                            
+                            let val: soroban_wasmi::Value = ok.marshal_relative_from_self(&host).unwrap();
+                            
+                            if let soroban_wasmi::Value::I64(v) = val {
+                                Ok((v,))
+                            } else {
+                                Err(0)
+                            }
+                        },
+                        Err(hosterr) => {
+                            panic!("todo")
+                        }
+                    };
+
+                    Ok(Val::from_payload(res.unwrap().0 as u64))
+                });
+
+                res.unwrap().get_payload() as i64
+            });
+
+            FunctionInfo {
+                module: "b",
+                func: "j",
+                wrapped,
+            }
+        };
+
         let symbol_index_from_linmem = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, sym: i64,  lm_pos: i64, len: i64| {
                 let vm_ctx = CustomVMCtx::new(&caller);
@@ -1175,6 +1286,140 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let vec_new_from_linear_memory_mem = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
+                let vm_ctx = CustomVMCtx::new(&caller);
+                
+                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                host.enable_debug();
+                
+                let effects = || {
+                    let res: Result<_, soroban_env_host::HostError> = host.vec_new_from_linear_memory_mem(vm_ctx, U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(lm_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(len), &host).unwrap(), &host).unwrap());
+                    res
+                };
+
+                let res = host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                    let res = effects();
+                    let res = match res {
+                        Ok(ok) => {
+                            let ok = ok.check_env_arg(&host).unwrap();
+                            
+                            let val: soroban_wasmi::Value = ok.marshal_relative_from_self(&host).unwrap();
+                            
+                            if let soroban_wasmi::Value::I64(v) = val {
+                                Ok((v,))
+                            } else {
+                                Err(0)
+                            }
+                        },
+                        Err(hosterr) => {
+                            panic!("{:?}", hosterr)
+                        }
+                    };
+
+                    Ok(Val::from_payload(res.unwrap().0 as u64))
+                });
+
+                res.unwrap().get_payload() as i64
+            });
+
+            FunctionInfo {
+                module: "v",
+                func: "g",
+                wrapped,
+            }
+        };
+
+        let map_unpack_to_linear_memory_fn_mem = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, map: i64, keys_pos: i64, vals_pos: i64, len: i64| {
+                
+                
+                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                host.enable_debug();
+                
+                let mut effects = || {
+                    let mut vm_ctx = CustomVMCtx::new_mut(caller);
+                    let res: Result<_, soroban_env_host::HostError> = host.map_unpack_to_linear_memory_fn_mem(&mut vm_ctx, MapObject::check_env_arg(MapObject::try_marshal_from_relative_value(soroban_wasmi::Value::I64(map), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(keys_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(vals_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(len), &host).unwrap(), &host).unwrap());
+                    res
+                };
+
+                let res = host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                    let res = effects();
+                    let res = match res {
+                        Ok(ok) => {
+                            let ok = ok.check_env_arg(&host).unwrap();
+                            
+                            
+                            let val: soroban_wasmi::Value = ok.marshal_relative_from_self(&host).unwrap();
+                            
+                            if let soroban_wasmi::Value::I64(v) = val {
+                                Ok((v,))
+                            } else {
+                                Err(0)
+                            }
+                        },
+                        Err(hosterr) => {
+                            panic!("{:?}", hosterr)
+                        }
+                    };
+
+                    Ok(Val::from_payload(res.unwrap().0 as u64))
+                });
+
+                res.unwrap().get_payload() as i64
+            });
+
+            FunctionInfo {
+                module: "m",
+                func: "a",
+                wrapped,
+            }
+        };
+
+        /*let memobj_copy_from_linear_memory = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, obj: i64, obj_pos: i64,  lm_pos: i64, len: i64| {
+                let vm_ctx = CustomVMCtx::new(&caller);
+                
+                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                host.enable_debug();
+                
+                let effects = || {
+                    let res: Result<_, soroban_env_host::HostError> = host.symbol_index_in_linear_memory_mem(vm_ctx, Symbol::check_env_arg(Symbol::try_marshal_from_relative_value(soroban_wasmi::Value::I64(sym), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(lm_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(len), &host).unwrap(), &host).unwrap());
+                    res
+                };
+
+                let res = host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
+                    let res = effects();
+                    let res = match res {
+                        Ok(ok) => {
+                            let ok = ok.check_env_arg(&host).unwrap();
+                            
+                            let val: soroban_wasmi::Value = ok.marshal_relative_from_self(&host).unwrap();
+                            
+                            if let soroban_wasmi::Value::I64(v) = val {
+                                Ok((v,))
+                            } else {
+                                Err(0)
+                            }
+                        },
+                        Err(hosterr) => {
+                            panic!("{:?}", hosterr)
+                        }
+                    };
+
+                    Ok(Val::from_payload(res.unwrap().0 as u64))
+                });
+
+                res.unwrap().get_payload() as i64
+            });
+
+            FunctionInfo {
+                module: "b",
+                func: "m",
+                wrapped,
+            }
+        };*/
+
         let mut soroban_functions = soroban_host_gen::generate_host_fn_infos(store);
         
         let mut arr = vec![
@@ -1189,6 +1434,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             read_contract_entries_fn,
             
             scval_to_valid_host_val,
+            valid_host_val_to_scval,
             read_contract_entries_to_env_fn,
             conclude_fn,
             send_message_fn,
@@ -1199,7 +1445,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             wbin_tab_set_null_fn,
 
             string_from_linmem,
-            symbol_index_from_linmem
+            symbol_index_from_linmem,
+            vec_new_from_linear_memory_mem,
+            symbol_from_linmem,
+            map_unpack_to_linear_memory_fn_mem
         ];
 
         soroban_functions.append(&mut arr);
@@ -1242,23 +1491,53 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
 
 pub struct CustomVMCtx<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> {
-    caller: &'a Caller<'a, Host<DB, L>>
+    caller: Option<&'a Caller<'a, Host<DB, L>>>,
+    caller_mut: Option<Caller<'a, Host<DB, L>>>,
 }
 
 impl<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> CustomVMCtx<'a, DB, L> {
     fn new(ctx: &'a Caller<Host<DB, L>>) -> Self {
         Self {
-            caller: ctx
+            caller: Some(ctx),
+            caller_mut: None
+        }
+    }
+
+    fn new_mut(ctx: Caller<'a, Host<DB, L>>) -> Self {
+        Self {
+            caller: None,
+            caller_mut: Some(ctx)
         }
     }
 }
 
 impl<'a, DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> CustomContextVM for CustomVMCtx<'a, DB, L> {
     fn read(&self, mem_pos: usize, buf: &mut [u8]) {
-        Host::get_memory(&self.caller).read(self.caller, mem_pos, buf);
+        if let Some(caller) = self.caller {
+            Host::get_memory(caller).read(caller, mem_pos, buf);
+        } else {
+            Host::get_memory(self.caller_mut.as_ref().unwrap()).read(self.caller_mut.as_ref().unwrap(), mem_pos, buf);
+        }
     }
 
+
     fn data(&self) -> &[u8] {
-        Host::get_memory(&self.caller).data(self.caller)
+        if let Some(caller) = self.caller {
+            Host::get_memory(caller).data(caller)
+        } else {
+            Host::get_memory(self.caller_mut.as_ref().unwrap()).data(self.caller_mut.as_ref().unwrap())
+        }
+    }
+
+    fn write(&mut self, pos: u32, slice: &[u8]) -> i64 {
+        Host::write_to_memory_mut(self.caller_mut.as_mut().unwrap(), pos, slice).unwrap()
+    }
+
+    fn data_mut(&mut self) -> &mut [u8] {
+        if let Some(caller) = self.caller_mut.as_mut() {
+            Host::get_memory_mut(caller).data_mut(caller)
+        } else {
+            &mut []
+        }
     }
 }
