@@ -77,7 +77,7 @@ pub struct EventByContractId {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Data {
-    pub eventByContractId: EventByContractId,
+    pub eventByContractIds: EventByContractId,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
