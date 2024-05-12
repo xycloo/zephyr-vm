@@ -19,7 +19,14 @@ impl SnapshotSource for DynamicSnapshot {
                 
                 let mut stmt = conn.prepare(&query_string).unwrap();
                 let mut entries = stmt.query(params![id]).unwrap();
-                let row = entries.next().unwrap().unwrap();
+                
+                let row = entries.next().unwrap();
+                
+                if row.is_none() {
+                    return Ok(None);
+                }
+                let row = row.unwrap();
+
                 let entry = LedgerEntry {
                     last_modified_ledger_seq: 0,
                     ext: LedgerEntryExt::V0,
@@ -48,7 +55,14 @@ impl SnapshotSource for DynamicSnapshot {
                 
                 let mut stmt = conn.prepare(&query_string).unwrap();
                 let mut entries = stmt.query(params![hash.to_xdr_base64(Limits::none()).unwrap()]).unwrap();
-                let row = entries.next().unwrap().unwrap();
+                
+                let row = entries.next().unwrap();
+                
+                if row.is_none() {
+                    return Ok(None);
+                }
+                let row = row.unwrap();
+
                 let xdr_entry: String = row.get(0).unwrap();
                 let xdr_entry = LedgerEntry::from_xdr_base64(xdr_entry, Limits::none()).unwrap();
                 
@@ -64,7 +78,13 @@ impl SnapshotSource for DynamicSnapshot {
                 
                 let mut stmt = conn.prepare(&query_string).unwrap();
                 let mut entries = stmt.query(params![contract.to_xdr_base64(Limits::none()).unwrap(), scval.to_xdr_base64(Limits::none()).unwrap()]).unwrap();
-                let row = entries.next().unwrap().unwrap();
+                let row = entries.next().unwrap();
+                
+                if row.is_none() {
+                    return Ok(None);
+                }
+                let row = row.unwrap();
+                
                 let xdr_entry: String = row.get(0).unwrap();
                 let xdr_entry = LedgerEntry::from_xdr_base64(xdr_entry, Limits::none()).unwrap();
 
