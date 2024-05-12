@@ -137,7 +137,7 @@ impl ExecutionWrapper {
     pub fn build_transitions_from_events(events_response: query::Response) -> Vec<LedgerCloseMeta> {
         let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
         
-        for event in events_response.data.eventByContractId.nodes {
+        for event in events_response.data.eventByContractIds.nodes {
             let seq = event.txInfoByTx.ledgerByLedger.sequence;
             if all_events_by_ledger.contains_key(&seq) {
                 let mut other_events: Vec<EventNode> = all_events_by_ledger.get(&seq).unwrap().to_vec();
