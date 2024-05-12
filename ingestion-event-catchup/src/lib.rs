@@ -32,9 +32,7 @@ impl ZephyrStandard for LedgerReader {
 impl LedgerStateRead for LedgerReader {
     fn read_contract_data_entry_by_contract_id_and_key(&self, contract: ScAddress, key: ScVal) -> Option<ContractDataEntry> {        
         let conn = Connection::open(&self.path).unwrap();
-
         let query_string = format!("SELECT contractid, key, ledgerentry, \"type\", lastmodified FROM contractdata where contractid = ?1 AND key = ?2");
-        println!("{:?} {:?}", contract.to_xdr_base64(Limits::none()).unwrap(), key.to_xdr_base64(Limits::none()).unwrap());
         
         let mut stmt = conn.prepare(&query_string).unwrap();
         let entries = stmt.query_map(params![contract.to_xdr_base64(Limits::none()).unwrap(), key.to_xdr_base64(Limits::none()).unwrap()], |row| {
@@ -54,6 +52,7 @@ impl LedgerStateRead for LedgerReader {
     }
     
     fn read_contract_data_entries_by_contract_id(&self, contract: ScAddress) -> Vec<ContractDataEntry> {
+        println!("address {}", contract.to_xdr_base64(Limits::none()).unwrap());
         let conn = Connection::open(&self.path).unwrap();
 
         let query_string = format!("SELECT contractid, key, ledgerentry, \"type\", lastmodified FROM contractdata where contractid = ?1");
@@ -75,30 +74,48 @@ impl LedgerStateRead for LedgerReader {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FunctionRequest {
-    pub fname: String
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct InvokeZephyrFunction {
+    fname: String,
+    arguments: String
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ExecutionMode {
+    EventCatchup(Vec<String>),
+    Function(InvokeZephyrFunction)
+}
+
+/// NB: This is meant for internal API use.
+/// This is unsafe to extern.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FunctionRequest {
+    binary_id: u32,
+    user_id: u32,
+    jwt: String,
+    pub mode: ExecutionMode
+}
+
+#[derive(Clone, Debug)]
 pub struct ExecutionWrapper {
-    binary: Vec<u8>
+    request: FunctionRequest
 }
 
 impl ExecutionWrapper {
-    pub fn new(function_bin: &[u8]) -> Self {
+    pub fn new(request: FunctionRequest) -> Self {
         Self {
-            binary: function_bin.to_vec()
+            request
         }
     }
-
-    pub async fn spawn_jobs(&self, fname: &str) {
-        let jwt = std::env::var("JWT").unwrap_or_else(|e| panic!("{}: {}", "JWT", e));
-        let client = reqwest::Client::new();
-        
+    
+    pub async fn retrieve_events(&self, contracts_ids: &[String]) -> query::Response {
+        let jwt = &self.request.jwt;
         let network = std::env::var("NETWORK").unwrap_or_else(|e| panic!("{}: {}", "NETWORK", e));
         
-        let graphql_endpoint = if network == String::from("mainnet") {
+        let client = reqwest::Client::new();
+        
+        let graphql_endpoint = if network == "mainnet" {
             "https://mainnet.mercurydata.app:2083/graphql"
         } else {
             "https://api.mercurydata.app:2083/graphql"
@@ -106,14 +123,19 @@ impl ExecutionWrapper {
         
         let res = client.post(graphql_endpoint)
             .bearer_auth(jwt)
-            .json(&get_query())
+            .json(&get_query(contracts_ids))
             .send()
             .await.unwrap();
 
         let resp: crate::query::Response = res.json().await.unwrap();
-        
+
+        resp
+    }
+
+    pub fn build_transitions_from_events(events_response: query::Response) -> Vec<LedgerCloseMeta> {
         let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
-        for event in resp.data.eventByContractId.nodes {
+        
+        for event in events_response.data.eventByContractId.nodes {
             let seq = event.txInfoByTx.ledgerByLedger.sequence;
             if all_events_by_ledger.contains_key(&seq) {
                 let mut other_events: Vec<EventNode> = all_events_by_ledger.get(&seq).unwrap().to_vec();
@@ -181,20 +203,55 @@ impl ExecutionWrapper {
             metas.push(LedgerCloseMeta::V1(v1))
         }
 
-        for meta in metas {
-            println!("{}", self.reproduce_async_runtime(fname, meta).await)
+        metas
+    }
+
+    pub async fn catchup_spawn_jobs(&self) -> String {
+        println!("executing {:?}", self.request);
+        match &self.request.mode {
+            ExecutionMode::EventCatchup(contract_ids) => {
+                let events = self.retrieve_events(contract_ids.as_slice()).await;
+                let metas = Self::build_transitions_from_events(events);
+
+                for meta in metas {
+                    self.reproduce_async_runtime(Some(meta), None).await;
+                };
+
+                "Catchup complete".into()
+            }
+
+            ExecutionMode::Function(function) => {
+                self.reproduce_async_runtime(None, Some(function)).await        
+            }
         }
     }
 
-    pub async fn reproduce_async_runtime(&self, fname: &str, meta: LedgerCloseMeta) -> String {
+    pub async fn reproduce_async_runtime(&self, meta: Option<LedgerCloseMeta>, function: Option<&InvokeZephyrFunction>) -> String {
+        let handle = tokio::runtime::Handle::current();
+        
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         
         let cloned = self.clone();
-        let fname = fname.to_string();
         
-        let join_handle = tokio::task::spawn_blocking(move || {
-            cloned.execute_function(&fname, tx, meta)   
-        });
+        let binary = database::execution::read_binary(self.request.binary_id as i64).await;
+        
+        let join_handle = match meta {
+            Some(meta) => {
+                let join_handle = handle.spawn_blocking(move || {
+                    cloned.execute_with_transition( tx, meta, binary)
+                });
+
+                join_handle
+            }
+            None => {
+                let function = function.cloned().unwrap();
+                let join_handle = handle.spawn_blocking(move || {
+                    cloned.execute_function(tx, binary, function)
+                });
+
+                join_handle
+            }
+        };
 
         let resp = join_handle.await.unwrap();
         
@@ -243,39 +300,43 @@ impl ExecutionWrapper {
                 }
             }
         }).await;
-
+        
         resp
     }
-
-    pub fn execute_function(&self, fname: &str, tx: UnboundedSender<Vec<u8>>, meta: LedgerCloseMeta) -> String {
-        let mut host = Host::<MercuryDatabase, LedgerReader>::from_id(env::var("USER_ID").unwrap().parse().unwrap()).unwrap();
-        host.add_transmitter(tx);
-
-        let start = std::time::Instant::now();
-        let vm = Vm::new(&host, &self.binary).unwrap();
-        
-        host.load_context(Rc::downgrade(&vm)).unwrap();
-        host.add_ledger_close_meta(meta.to_xdr(Limits::none()).unwrap()).unwrap();
-        let res = vm.metered_function_call(&host, fname).unwrap_or("no response".into());
-
-        println!("elapsed {:?}", start.elapsed());
-
-        res
-    }
-
 }
 
-#[cfg(test)]
-mod test {
-    use std::fs::read;
+impl ExecutionWrapper {
+    fn execute_with_transition(&self,sender:UnboundedSender<Vec<u8>>, transition:LedgerCloseMeta, binary: Vec<u8>) -> String {
+        let mut host = Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64).unwrap();
+        host.add_transmitter(sender);
 
-    use crate::ExecutionWrapper;
+        let start = std::time::Instant::now();
+        let vm = Vm::new(&host, &binary).unwrap();
+        
+        host.load_context(Rc::downgrade(&vm)).unwrap();
+        host.add_ledger_close_meta(transition.to_xdr(Limits::none()).unwrap()).unwrap();
+        let res = vm.metered_function_call(&host, "on_close").unwrap_or("no response".into());
 
-    #[tokio::test]
-    async fn run_instance_getter() {
-        let code = { read("../target/wasm32-unknown-unknown/release/simple.wasm").unwrap() };
-        let execution = ExecutionWrapper::new(&code);
+        println!("{res}: elapsed {:?}", start.elapsed());
 
-        execution.spawn_jobs("on_close").await;
+        "execution successful".into()
+    }
+
+    fn execute_function(&self,sender:UnboundedSender<Vec<u8>>, binary: Vec<u8>, function: InvokeZephyrFunction) -> String {
+        let mut host = Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64).unwrap();
+        host.add_transmitter(sender);
+
+        let start = std::time::Instant::now();
+        let vm = Vm::new(&host, &binary).unwrap();
+        
+        host.load_context(Rc::downgrade(&vm)).unwrap();
+        println!("{:?}", serde_json::from_str::<serde_json::Value>(&function.arguments));
+        host.add_ledger_close_meta(bincode::serialize(&function.arguments).unwrap()).unwrap();
+        
+        let res = vm.metered_function_call(&host, &function.fname).unwrap_or("no response".into());
+
+        println!("{res}: elapsed {:?}", start.elapsed());
+
+        res
     }
 }

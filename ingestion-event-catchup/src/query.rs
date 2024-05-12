@@ -1,26 +1,35 @@
 use serde::{Deserialize, Serialize};
 
-pub fn get_query() -> Request {
-    let query = "
-query Test {
-    eventByContractId(searchedContractId: \"CAUEYBG456425X627TP7JGLZTJOGYSH3XBDKNBTPUXOFIVVYYQ3UTHFR\") {
-        nodes {
-        txInfoByTx {
-            ledgerByLedger {
+pub fn get_query(contracts: &[String]) -> Request {
+    let mut contracts_string = String::from("[");
+    for (idx, contract) in contracts.iter().enumerate() {
+        if idx == contracts.len() - 1 {
+            contracts_string.push_str(&format!("\"{}\"]", contract))
+        } else {
+            contracts_string.push_str(&format!("\"{}\", ", contract))
+        }
+    }
+
+    let query = format!("
+query Test {{
+    eventByContractId(searchedContractId: {contracts_string}) {{
+        nodes {{
+        txInfoByTx {{
+            ledgerByLedger {{
             closeTime,
             sequence
-            }
-        }
+            }}
+        }}
         contractId,
         topic1,
         topic2,
         topic3,
         topic4,
         data
-        }
-    }
-}
-    ".to_string();
+        }}
+    }}
+}}
+    ", );
 
     Request {
         query,

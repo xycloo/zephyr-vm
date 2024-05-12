@@ -7,10 +7,11 @@ use anyhow::{Result, anyhow};
 use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
 use soroban_env_host::budget::AsBudget;
 use soroban_env_host::vm::CustomContextVM;
-use soroban_env_host::{CheckedEnvArg, ContractFunctionSet, Env, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
+use soroban_env_host::{CheckedEnvArg, ContractFunctionSet, Env, LedgerInfo, MapObject, Symbol, TryFromVal, TryIntoVal, U32Val, Val, VmCaller, WasmiMarshal};
 use soroban_env_host::wasmi as soroban_wasmi;
+use soroban_simulation::simulation::SimulationAdjustmentConfig;
 //use soroban_sdk::{IntoVal, Symbol, Val};
-use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, Limits, ReadXdr, ScAddress, ScVal, WriteXdr};
+use stellar_xdr::next::{AccountId, Hash, HostFunction, InvokeContractArgs, LedgerEntry, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr};
 use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};
@@ -19,6 +20,7 @@ use std::{
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
+use crate::snapshot::DynamicSnapshot;
 use crate::soroban_host_gen::{self, RelativeObjectConversion};
 use crate::vm::MemoryManager;
 use crate::{
@@ -113,6 +115,12 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
 
     /// Latest ledger close meta. This is set as optional as
     /// some Zephyr programs might not need the ledger meta.
+    /// 
+    /// NB: naming probably needs to change as this is used
+    /// to just communicate starting input to a program, which could
+    /// be both:
+    /// - a ledger close meta (state transition) < for ingestors
+    /// - a request body < for functions  
     pub latest_close: RefCell<Option<Vec<u8>>>, // some zephyr programs might not need the ledger close meta
 
     /// Implementation of the Shielded Store.
@@ -737,7 +745,35 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         res
     }
 
+    pub fn simulate_soroban_transaction(caller: Caller<Self>, source: [u8;32], offset: i64, size: i64) -> Result<(i64, i64)>{
+        let host = caller.data();
 
+        let host_fn = {
+            let memory = {
+                let context = host.0.context.borrow();
+                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let mem_manager = &vm.memory_manager;
+
+                mem_manager.memory
+            };
+
+            let segment = (offset, size);
+            let bytes = Self::read_segment_from_memory(&memory, &caller, segment)?;
+
+            HostFunction::from_xdr(bytes, Limits::none())?
+        };
+        
+        let snapshot_source = Rc::new(DynamicSnapshot {});
+        let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
+        let mut ledger_info = LedgerInfo::default();
+        ledger_info.protocol_version = 21;
+
+        println!("simulating the tx");
+        let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(snapshot_source, None, &SimulationAdjustmentConfig::default_adjustment(), &ledger_info, host_fn, None, &source, [0;32], true).unwrap();
+        println!("simulated");
+        Self::write_to_memory(caller, &bincode::serialize(&resp).unwrap())
+    }
+    
     pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
         let host = caller.data();
     
@@ -1200,6 +1236,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let symbol_from_linmem = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
+                println!("symbol form linear memory");
+                
                 let vm_ctx = CustomVMCtx::new(&caller);
                 
                 let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
@@ -1420,6 +1458,25 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };*/
 
+        let soroban_simulate_tx_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, account_part_1: i64, account_part_2: i64, account_part_3: i64, account_part_4: i64, offset: i64, size: i64| {
+                let source = WrappedMaxBytes::array_from_max_parts::<32>(&[account_part_1, account_part_2, account_part_3, account_part_4]);
+
+                let result = Host::simulate_soroban_transaction(caller, source, offset, size);
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "soroban_simulate_tx",
+                wrapped
+            }
+        };
+
         let mut soroban_functions = soroban_host_gen::generate_host_fn_infos(store);
         
         let mut arr = vec![
@@ -1448,7 +1505,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             symbol_index_from_linmem,
             vec_new_from_linear_memory_mem,
             symbol_from_linmem,
-            map_unpack_to_linear_memory_fn_mem
+            map_unpack_to_linear_memory_fn_mem,
+
+            soroban_simulate_tx_fn
         ];
 
         soroban_functions.append(&mut arr);

@@ -9,6 +9,30 @@ use zephyr::{
     ZephyrMock, ZephyrStandard,
 };
 
+pub mod execution {
+    use std::env;
+
+    use postgres::types::Type;
+
+    pub async fn read_binary(id: i64) -> Vec<u8> {
+        let (client, connection) = tokio_postgres::connect(&env::var("INGESTOR_DB").unwrap(), tokio_postgres::NoTls).await.unwrap();
+        
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+        
+        let code = client
+            .prepare_typed("select code from public.zephyr_programs WHERE id = $1", &[Type::INT8]).await.unwrap();
+
+        let rows = client.query(&code, &[&id]).await.unwrap();
+        let code: Vec<u8> = rows.get(0).unwrap().get(0);
+
+        code
+    }
+}
+
 mod symbol {
     const TAG: u8 = 14;
 

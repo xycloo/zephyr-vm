@@ -1,9 +1,22 @@
-use std::fs::read;
-use ingestion_event_catchup::ExecutionWrapper;
+use ingestion_event_catchup::{ExecutionWrapper, FunctionRequest};
+use warp::{reject::Rejection, reply::WithStatus, Filter};
 
 #[tokio::main]
 async fn main() {
-    let code = { read(std::env::var("TARGET").unwrap()).unwrap() };
-    let execution = ExecutionWrapper::new(&code);
-    let _ = execution.spawn_jobs("on_close").await;
+    let execute = warp::path("execute").and(warp::post()).and(warp::body::json()).and_then(|body: FunctionRequest| async move {
+        let handle = tokio::spawn(async {
+            let execution = ExecutionWrapper::new(body);
+            let resp = execution.catchup_spawn_jobs().await;
+
+            resp
+        });
+
+        let resp = handle.await;
+
+        Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(resp.unwrap_or("failed".into()), warp::http::StatusCode::OK))
+    });
+
+    let routes = warp::post().and(execute);
+    
+    warp::serve(routes).run(([0, 0, 0, 0], 8085)).await
 }

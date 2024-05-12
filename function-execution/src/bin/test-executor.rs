@@ -1,6 +1,7 @@
 use std::fs::read;
 
 use function_execution::{ExecutionWrapper, FunctionRequest};
+use stellar_xdr::next::{Hash, Limits, ReadXdr};
 use warp::{reject::Rejection, reply::WithStatus, Filter};
 
 #[tokio::main]
@@ -17,4 +18,9 @@ async fn main() {
     let routes = warp::post().and(execute);
     
     warp::serve(routes).run(([0, 0, 0, 0], 8443)).await
+}
+
+#[test]
+fn test() {
+    println!("{:?}", Hash::from_xdr_base64("/5cuUQJvhjybwqW9LLMyNCgQCZXhpfFTptnbbkIbn+8=", Limits::none()));
 }
