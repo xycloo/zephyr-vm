@@ -14,12 +14,11 @@ use soroban_env_host::{
 };
 
 use soroban_env_host::{
-    xdr::{ContractCostType, ScErrorCode, ScErrorType},
+    xdr::{ContractCostType, ScErrorCode, ScErrorType, Hash},
     CheckedEnvArg, EnvBase, VmCallerEnv, Host as SorobanHost
 };
 
 use wasmi::{Func, Store};
-use stellar_xdr::next::Hash;
 
 pub(crate) trait RelativeObjectConversion: WasmiMarshal + Clone {
     fn absolute_to_relative(self, _host: &SorobanHost) -> Result<Self, HostError> {

@@ -58,23 +58,23 @@ impl ZephyrMock for MercuryDatabase {
 pub struct LedgerReader {}
 
 impl LedgerStateRead for LedgerReader {
-    /*fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<ContractDataEntry> {
+    /*fn read_contract_data_entries_by_contract_ids(&self, contracts: impl IntoIterator<Item = soroban_env_host::xdr::ScAddress>) -> Vec<ContractDataEntry> {
         vec![]
     }
 
-    fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = stellar_xdr::next::ScAddress>) -> Vec<ContractDataEntry> {
+    fn read_contract_instance_by_contract_ids(&self, contracts: impl IntoIterator<Item = soroban_env_host::xdr::ScAddress>) -> Vec<ContractDataEntry> {
         vec![]
     }*/
 
-    fn read_contract_data_entry_by_contract_id_and_key(&self, contract: stellar_xdr::next::ScAddress, key: stellar_xdr::next::ScVal) -> Option<ContractDataEntry> {
+    fn read_contract_data_entry_by_contract_id_and_key(&self, contract: soroban_env_host::xdr::ScAddress, key: soroban_env_host::xdr::ScVal) -> Option<ContractDataEntry> {
         None
     }
 
-    fn read_contract_data_entries_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Vec<ContractDataEntry> {
+    fn read_contract_data_entries_by_contract_id(&self, contract: soroban_env_host::xdr::ScAddress) -> Vec<ContractDataEntry> {
         vec![]
     }
 
-    //fn read_contract_instance_by_contract_id(&self, contract: stellar_xdr::next::ScAddress) -> Option<ContractDataEntry> {
+    //fn read_contract_instance_by_contract_id(&self, contract: soroban_env_host::xdr::ScAddress) -> Option<ContractDataEntry> {
         //None
     //}
 }
