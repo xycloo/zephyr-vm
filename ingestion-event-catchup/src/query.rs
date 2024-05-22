@@ -12,7 +12,7 @@ pub fn get_query(contracts: &[String]) -> Request {
 
     let query = format!("
 query Test {{
-    eventByContractId(searchedContractId: {contracts_string}) {{
+    eventByContractIds(ids: {contracts_string}) {{
         nodes {{
         txInfoByTx {{
             ledgerByLedger {{
@@ -77,7 +77,7 @@ pub struct EventByContractId {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Data {
-    pub eventByContractId: EventByContractId,
+    pub eventByContractIds: EventByContractId,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

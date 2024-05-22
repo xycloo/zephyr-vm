@@ -11,7 +11,7 @@ use soroban_env_host::{CheckedEnvArg, ContractFunctionSet, Env, LedgerInfo, MapO
 use soroban_env_host::wasmi as soroban_wasmi;
 use soroban_simulation::simulation::SimulationAdjustmentConfig;
 //use soroban_sdk::{IntoVal, Symbol, Val};
-use stellar_xdr::next::{AccountId, Hash, HostFunction, InvokeContractArgs, LedgerEntry, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr};
+use soroban_env_host::xdr::{AccountId, Hash, HostFunction, InvokeContractArgs, LedgerEntry, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr};
 use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};

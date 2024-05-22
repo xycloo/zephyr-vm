@@ -12,8 +12,12 @@ serde = { version = "1.0", features = ["derive"] }
 #stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
 http = "1.1.0"
 
-[dependencies.stellar-xdr]
-version = "=20.1.0"
-git = "https://github.com/stellar/rs-stellar-xdr"
-rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
-features=["next", "curr", "serde", "base64"]
+#[dependencies.stellar-xdr]
+#version = "=20.1.0"
+#git = "https://github.com/stellar/rs-stellar-xdr"
+#rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
+#features=["next", "curr", "serde", "base64"]
+
+[dependencies.soroban-env-host]
+path = "../../rs-soroban-env-conflicts/soroban-env-host"
+features = ["testutils", "next"]

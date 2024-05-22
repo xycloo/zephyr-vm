@@ -5,12 +5,13 @@ use reqwest::header::{HeaderMap, HeaderName};
 use rs_zephyr_common::{http::{AgnosticRequest, Method}, ContractDataEntry, RelayedMessageRequest};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use stellar_xdr::next::{ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1, LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta, ReadXdr, ScAddress, ScVal, SorobanTransactionMeta, TransactionMetaV3, TransactionResult, TransactionResultMeta, TransactionResultPair, TransactionResultResult, WriteXdr};
-use tokio::sync::mpsc::UnboundedSender;
+use soroban_env_host::xdr::{ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1, LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta, ReadXdr, ScAddress, ScVal, SorobanTransactionMeta, TransactionMetaV3, TransactionResult, TransactionResultMeta, TransactionResultPair, TransactionResultResult, WriteXdr};
+use tokio::{runtime::Handle, sync::mpsc::UnboundedSender, task::JoinHandle};
 use zephyr::{db::ledger::LedgerStateRead, host::Host, vm::Vm, ZephyrStandard};
 
 use crate::database::MercuryDatabase;
 
+pub mod jobs_manager;
 mod database;
 mod query;
 mod ledger;
@@ -97,6 +98,16 @@ pub struct FunctionRequest {
     pub mode: ExecutionMode
 }
 
+impl FunctionRequest {
+    pub fn needs_job(&self) -> bool {
+        if let ExecutionMode::EventCatchup(_) = self.mode {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ExecutionWrapper {
     request: FunctionRequest
@@ -115,7 +126,9 @@ impl ExecutionWrapper {
         
         let client = reqwest::Client::new();
         
-        let graphql_endpoint = if network == "mainnet" {
+        let graphql_endpoint = if env::var("LOCAL").unwrap() == "true" {
+            "http://localhost:8084/graphql"
+        } else if network == "mainnet" {
             "https://mainnet.mercurydata.app:2083/graphql"
         } else {
             "https://api.mercurydata.app:2083/graphql"
@@ -135,7 +148,7 @@ impl ExecutionWrapper {
     pub fn build_transitions_from_events(events_response: query::Response) -> Vec<LedgerCloseMeta> {
         let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
         
-        for event in events_response.data.eventByContractId.nodes {
+        for event in events_response.data.eventByContractIds.nodes {
             let seq = event.txInfoByTx.ledgerByLedger.sequence;
             if all_events_by_ledger.contains_key(&seq) {
                 let mut other_events: Vec<EventNode> = all_events_by_ledger.get(&seq).unwrap().to_vec();
@@ -163,26 +176,26 @@ impl ExecutionWrapper {
                         result: TransactionResult {
                             fee_charged: 0,
                             result: TransactionResultResult::TxSuccess(vec![].try_into().unwrap()),
-                            ext: stellar_xdr::next::TransactionResultExt::V0
+                            ext: soroban_env_host::xdr::TransactionResultExt::V0
                         }
                     },
                     fee_processing: LedgerEntryChanges(vec![].try_into().unwrap()),
-                    tx_apply_processing: stellar_xdr::next::TransactionMeta::V3(TransactionMetaV3 {
-                        ext: stellar_xdr::next::ExtensionPoint::V0,
+                    tx_apply_processing: soroban_env_host::xdr::TransactionMeta::V3(TransactionMetaV3 {
+                        ext: soroban_env_host::xdr::ExtensionPoint::V0,
                         tx_changes_before: LedgerEntryChanges(vec![].try_into().unwrap()),
                         tx_changes_after: LedgerEntryChanges(vec![].try_into().unwrap()),
                         operations: vec![OperationMeta {
                             changes: LedgerEntryChanges(vec![].try_into().unwrap())
                         }].try_into().unwrap(),
                         soroban_meta: Some(SorobanTransactionMeta {
-                            ext: stellar_xdr::next::SorobanTransactionMetaExt::V0,
+                            ext: soroban_env_host::xdr::SorobanTransactionMetaExt::V0,
                             return_value: ScVal::Void,
                             diagnostic_events: vec![].try_into().unwrap(),
                             events: vec![ContractEvent {
-                                ext: stellar_xdr::next::ExtensionPoint::V0,
+                                ext: soroban_env_host::xdr::ExtensionPoint::V0,
                                 contract_id: Some(Hash(stellar_strkey::Contract::from_string(&event.contractId).unwrap().0)),
-                                type_: stellar_xdr::next::ContractEventType::Contract,
-                                body: stellar_xdr::next::ContractEventBody::V0(ContractEventV0 {
+                                type_: soroban_env_host::xdr::ContractEventType::Contract,
+                                body: soroban_env_host::xdr::ContractEventBody::V0(ContractEventV0 {
                                     topics: vec![ScVal::from_xdr_base64(event.topic1.clone().unwrap_or("".into()), Limits::none()).unwrap_or(ScVal::Void),
                                     ScVal::from_xdr_base64(event.topic2.clone().unwrap_or("".into()), Limits::none()).unwrap_or(ScVal::Void),
                                     ScVal::from_xdr_base64(event.topic3.clone().unwrap_or("".into()), Limits::none()).unwrap_or(ScVal::Void),
@@ -206,27 +219,32 @@ impl ExecutionWrapper {
         metas
     }
 
-    pub async fn catchup_spawn_jobs(&self) -> String {
+    pub async fn catchup_spawn_jobs(&self) -> JoinHandle<String> {
         println!("executing {:?}", self.request);
         match &self.request.mode {
             ExecutionMode::EventCatchup(contract_ids) => {
                 let events = self.retrieve_events(contract_ids.as_slice()).await;
                 let metas = Self::build_transitions_from_events(events);
 
-                for meta in metas {
-                    self.reproduce_async_runtime(Some(meta), None).await;
-                };
+                let cloned = self.clone();
+                let job = Handle::current().spawn(async move {
+                    for meta in metas {
+                        cloned.reproduce_async_runtime(Some(meta), None).await;
+                    };
 
-                "Catchup complete".into()
+                    "Catchup in progress".into()
+                });
+
+                job
             }
 
             ExecutionMode::Function(function) => {
-                self.reproduce_async_runtime(None, Some(function)).await        
+                self.reproduce_async_runtime(None, Some(function)).await
             }
         }
     }
 
-    pub async fn reproduce_async_runtime(&self, meta: Option<LedgerCloseMeta>, function: Option<&InvokeZephyrFunction>) -> String {
+    pub async fn reproduce_async_runtime(&self, meta: Option<LedgerCloseMeta>, function: Option<&InvokeZephyrFunction>) -> JoinHandle<String> {
         let handle = tokio::runtime::Handle::current();
         
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -251,9 +269,7 @@ impl ExecutionWrapper {
 
                 join_handle
             }
-        };
-
-        let resp = join_handle.await.unwrap();
+        };        
         
         let _ = tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
@@ -301,7 +317,7 @@ impl ExecutionWrapper {
             }
         }).await;
         
-        resp
+        join_handle
     }
 }
 

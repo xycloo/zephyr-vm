@@ -23,9 +23,12 @@ tokio-postgres = "0.7.10"
 stellar-strkey = "0.0.7"
 async-trait = "0.1.0"
 
+[dependencies.soroban-env-host]
+path = "../../rs-soroban-env-conflicts/soroban-env-host"
+features = ["testutils", "next"]
 
-[dependencies.stellar-xdr]
-version = "=20.1.0"
-git = "https://github.com/stellar/rs-stellar-xdr"
-rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
-features=["next", "curr", "serde", "base64"]
+#[dependencies.stellar-xdr]
+#version = "=20.1.0"
+#git = "https://github.com/stellar/rs-stellar-xdr"
+#rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
+#features=["next", "curr", "serde", "base64"]

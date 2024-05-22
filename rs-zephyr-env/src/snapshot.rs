@@ -2,12 +2,12 @@ use std::{env, rc::Rc};
 
 use rusqlite::{params, Connection};
 use soroban_env_host::storage::{SnapshotSource, EntryWithLiveUntil};
-use stellar_xdr::next::{AccountEntry, ContractCodeEntry, LedgerEntry, LedgerEntryExt, LedgerEntryExtensionV1, LedgerKey, Limits, PublicKey, ReadXdr, SequenceNumber, Thresholds, WriteXdr};
+use soroban_env_host::xdr::{AccountEntry, ContractCodeEntry, LedgerEntry, LedgerEntryExt, LedgerEntryExtensionV1, LedgerKey, Limits, PublicKey, ReadXdr, SequenceNumber, Thresholds, WriteXdr};
 
 pub struct DynamicSnapshot {}
 
 impl SnapshotSource for DynamicSnapshot {
-    fn get(&self, key: &std::rc::Rc<stellar_xdr::next::LedgerKey>) -> Result<Option<soroban_env_host::storage::EntryWithLiveUntil>, soroban_env_host::HostError> {
+    fn get(&self, key: &std::rc::Rc<soroban_env_host::xdr::LedgerKey>) -> Result<Option<soroban_env_host::storage::EntryWithLiveUntil>, soroban_env_host::HostError> {
         println!("requested {:?}", key);
         let entry: Option<EntryWithLiveUntil> = match key.as_ref() {
             LedgerKey::Account(key) => {
@@ -30,7 +30,7 @@ impl SnapshotSource for DynamicSnapshot {
                 let entry = LedgerEntry {
                     last_modified_ledger_seq: 0,
                     ext: LedgerEntryExt::V0,
-                    data: stellar_xdr::next::LedgerEntryData::Account(AccountEntry {
+                    data: soroban_env_host::xdr::LedgerEntryData::Account(AccountEntry {
                         account_id: key.account_id.clone(),
                         balance: row.get(0).unwrap(),
                         seq_num: SequenceNumber(0),
@@ -40,7 +40,7 @@ impl SnapshotSource for DynamicSnapshot {
                         home_domain: Default::default(),
                         thresholds: Thresholds([0;4]),
                         signers: vec![].try_into().unwrap(),
-                        ext: stellar_xdr::next::AccountEntryExt::V0
+                        ext: soroban_env_host::xdr::AccountEntryExt::V0
                     })
                 };
 

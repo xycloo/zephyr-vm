@@ -24,7 +24,7 @@ pub enum ZephyrStatus {
 use http::AgnosticRequest;
 use log::ZephyrLog;
 use serde::{Deserialize, Serialize};
-use stellar_xdr::next::{LedgerEntry, ScAddress, ScVal};
+use soroban_env_host::xdr::{LedgerEntry, ScAddress, ScVal};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
