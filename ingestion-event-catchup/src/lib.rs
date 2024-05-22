@@ -6,11 +6,12 @@ use rs_zephyr_common::{http::{AgnosticRequest, Method}, ContractDataEntry, Relay
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use soroban_env_host::xdr::{ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1, LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta, ReadXdr, ScAddress, ScVal, SorobanTransactionMeta, TransactionMetaV3, TransactionResult, TransactionResultMeta, TransactionResultPair, TransactionResultResult, WriteXdr};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{runtime::Handle, sync::mpsc::UnboundedSender, task::JoinHandle};
 use zephyr::{db::ledger::LedgerStateRead, host::Host, vm::Vm, ZephyrStandard};
 
 use crate::database::MercuryDatabase;
 
+pub mod jobs_manager;
 mod database;
 mod query;
 mod ledger;
@@ -95,6 +96,16 @@ pub struct FunctionRequest {
     user_id: u32,
     jwt: String,
     pub mode: ExecutionMode
+}
+
+impl FunctionRequest {
+    pub fn needs_job(&self) -> bool {
+        if let ExecutionMode::EventCatchup(_) = self.mode {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -208,27 +219,32 @@ impl ExecutionWrapper {
         metas
     }
 
-    pub async fn catchup_spawn_jobs(&self) -> String {
+    pub async fn catchup_spawn_jobs(&self) -> JoinHandle<String> {
         println!("executing {:?}", self.request);
         match &self.request.mode {
             ExecutionMode::EventCatchup(contract_ids) => {
                 let events = self.retrieve_events(contract_ids.as_slice()).await;
                 let metas = Self::build_transitions_from_events(events);
 
-                for meta in metas {
-                    self.reproduce_async_runtime(Some(meta), None).await;
-                };
+                let cloned = self.clone();
+                let job = Handle::current().spawn(async move {
+                    for meta in metas {
+                        cloned.reproduce_async_runtime(Some(meta), None).await;
+                    };
 
-                "Catchup complete".into()
+                    "Catchup in progress".into()
+                });
+
+                job
             }
 
             ExecutionMode::Function(function) => {
-                self.reproduce_async_runtime(None, Some(function)).await        
+                self.reproduce_async_runtime(None, Some(function)).await
             }
         }
     }
 
-    pub async fn reproduce_async_runtime(&self, meta: Option<LedgerCloseMeta>, function: Option<&InvokeZephyrFunction>) -> String {
+    pub async fn reproduce_async_runtime(&self, meta: Option<LedgerCloseMeta>, function: Option<&InvokeZephyrFunction>) -> JoinHandle<String> {
         let handle = tokio::runtime::Handle::current();
         
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -253,9 +269,7 @@ impl ExecutionWrapper {
 
                 join_handle
             }
-        };
-
-        let resp = join_handle.await.unwrap();
+        };        
         
         let _ = tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
@@ -303,7 +317,7 @@ impl ExecutionWrapper {
             }
         }).await;
         
-        resp
+        join_handle
     }
 }
 
