@@ -7,7 +7,7 @@ pub struct AgnosticRequest {
     pub body: Option<String>,
     pub url: String,
     pub method: Method,
-    pub headers: Vec<(String, String)>
+    pub headers: Vec<(String, String)>,
 }
 
 /// Methods currently supported are Get and Post.
@@ -16,4 +16,3 @@ pub enum Method {
     Get,
     Post,
 }
-

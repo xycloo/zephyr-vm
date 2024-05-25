@@ -1,14 +1,17 @@
 //! Structures and implementations for the Zephyr Virtual Machine.
 //!
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use rs_zephyr_common::ContractDataEntry;
-use stellar_xdr::next::{LedgerEntry, VecM};
 use std::{cell::RefCell, rc::Rc};
+use stellar_xdr::next::{LedgerEntry, VecM};
 use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store, Value};
 
-use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, error::HostError, host::{InvokedFunctionInfo, Host}};
-
+use crate::{
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    error::HostError,
+    host::{Host, InvokedFunctionInfo},
+};
 
 const MIN_VALUE_STACK_HEIGHT: usize = 1024;
 
@@ -59,45 +62,45 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
     /// Creates and instantiates the VM.
     pub fn new(host: &Host<DB, L>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
         let mut config = wasmi::Config::default();
-        let stack_limits = StackLimits::new(MIN_VALUE_STACK_HEIGHT, MAX_VALUE_STACK_HEIGHT, MAX_RECURSION_DEPTH).unwrap();
+        let stack_limits = StackLimits::new(
+            MIN_VALUE_STACK_HEIGHT,
+            MAX_VALUE_STACK_HEIGHT,
+            MAX_RECURSION_DEPTH,
+        )
+        .unwrap();
 
         // TODO: decide which post-mvp features to override.
         // For now we use wasmtime's defaults.
         config.consume_fuel(true);
         config.set_stack_limits(stack_limits);
-        
+
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_module_code_bytes)?;
 
-
         let mut store = Store::new(&engine, host.clone());
         if let Err(error) = host.as_budget().infer_fuel(&mut store) {
-            return Err(anyhow!(error))
+            return Err(anyhow!(error));
         };
 
         // TODO: set Store::limiter() once host implements ResourceLimiter
 
         let mut linker = <Linker<Host<DB, L>>>::new(&engine);
-        
+
         for func_info in host.host_functions(&mut store) {
             // Note: this is just a current workaround.
-            let _ = linker.define(
-                func_info.module,
-                func_info.func,
-                func_info.wrapped,
-            );
+            let _ = linker.define(func_info.module, func_info.func, func_info.wrapped);
         }
-        
+
         // NOTE
         // We are not starting instance already.
         let instance = linker.instantiate(&mut store, &module)?;
-        let instance  = instance.start(&mut store)?; // handle
+        let instance = instance.start(&mut store)?; // handle
         let memory = instance
             .get_export(&mut store, "memory")
             .unwrap()
             .into_memory()
             .unwrap();
-        
+
         let memory_manager = MemoryManager::new(memory, 0);
 
         Ok(Rc::new(Self {
@@ -140,7 +143,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         Ok(())
     }
 
-    pub fn metered_function_call(self: &Rc<Self>, host: &Host<DB, L>, fname: &str) -> Result<String> {
+    pub fn metered_function_call(
+        self: &Rc<Self>,
+        host: &Host<DB, L>,
+        fname: &str,
+    ) -> Result<String> {
         let invoked_function_info = InvokedFunctionInfo::serverless_defaults(fname);
 
         let store: &RefCell<Store<Host<DB, L>>> = &self.store;
@@ -165,12 +172,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
             &mut retrn,
         );
 
-        println!("{:?}",host.read_result());
+        println!("{:?}", host.read_result());
 
         Ok(host.read_result())
     }
 }
-/* 
+/*
 #[cfg(test)]
 mod tests {
     use std::fs::{read, read_to_string};
@@ -182,7 +189,7 @@ mod tests {
     // Previous tests were removed due to being unstructured
     // and unorganized.
     //
-    // Tests of the Mercury integration are currently in Mercury's 
+    // Tests of the Mercury integration are currently in Mercury's
     // codebase.
     //
     // TODO: rewrite Zephyr-only tests.
@@ -192,7 +199,7 @@ mod tests {
         // todo rewrite test with proper configs
         let code = { read("/mnt/storagehdd/projects/master/zephyr-examples/zephyr-hello-ledger/target/wasm32-unknown-unknown/release/zephyr_hello_ledger.wasm").unwrap() };
         let mainnet_ledger = LedgerCloseMeta::from_xdr_base64(read_to_string("../../mercury/ledger.txt").unwrap(), Limits::none()).unwrap().to_xdr(Limits::none()).unwrap();
-        
+
         assert!(LedgerCloseMeta::from_xdr(&mainnet_ledger, Limits::none()).is_ok());
         let mut host = Host::<MercuryDatabase>::mocked().unwrap();
         host.add_ledger_close_meta(mainnet_ledger).unwrap();

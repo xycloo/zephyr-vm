@@ -1,28 +1,38 @@
 mod database;
+mod ledger;
 mod ledger_meta;
 mod symbol;
-mod ledger;
 
 pub use database::{TableRow, TableRows};
 pub use ledger_meta::MetaReader;
 pub use rs_zephyr_common::ContractDataEntry;
 
-use database::Database;
-use rs_zephyr_common::{log::{LogLevel, ZephyrLog}, wrapping::WrappedMaxBytes, RelayedMessageRequest, ZephyrStatus};
-use serde::{Deserialize, Serialize};
 use core::slice;
-use std::{alloc::{alloc, Layout}, convert::TryInto};
+use database::Database;
+use rs_zephyr_common::{
+    log::{LogLevel, ZephyrLog},
+    wrapping::WrappedMaxBytes,
+    RelayedMessageRequest, ZephyrStatus,
+};
+use serde::{Deserialize, Serialize};
+use std::{
+    alloc::{alloc, Layout},
+    convert::TryInto,
+};
 use stellar_xdr::next::{LedgerEntry, Limits, ReadXdr, ScVal, WriteXdr};
 use thiserror::Error;
 
 //pub use soroban_env_host;
+pub use bincode;
+pub use database::Condition;
 pub use ledger_meta::EntryChanges;
+pub use macros::DatabaseInteract as DatabaseDerive;
+pub use rs_zephyr_common::{
+    http::{AgnosticRequest, Method},
+    ZephyrVal,
+};
 pub use soroban_sdk;
 pub use stellar_xdr;
-pub use database::Condition;
-pub use rs_zephyr_common::{ZephyrVal, http::{AgnosticRequest, Method}};
-pub use bincode;
-pub use macros::DatabaseInteract as DatabaseDerive;
 
 pub type ServerlessResult = (i64, i64);
 
@@ -36,19 +46,41 @@ extern crate wee_alloc;
 extern "C" {
     #[allow(improper_ctypes)]
     #[link_name = "read_contract_data_entry_by_contract_id_and_key"]
-    pub fn read_contract_data_entry_by_contract_id_and_key(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64, offset: i64, size: i64) -> (i64, i64, i64);
+    pub fn read_contract_data_entry_by_contract_id_and_key(
+        contract_part_1: i64,
+        contract_part_2: i64,
+        contract_part_3: i64,
+        contract_part_4: i64,
+        offset: i64,
+        size: i64,
+    ) -> (i64, i64, i64);
 
     #[allow(improper_ctypes)]
     #[link_name = "read_contract_instance"]
-    pub fn read_contract_instance(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64, i64);
+    pub fn read_contract_instance(
+        contract_part_1: i64,
+        contract_part_2: i64,
+        contract_part_3: i64,
+        contract_part_4: i64,
+    ) -> (i64, i64, i64);
 
     #[allow(improper_ctypes)]
     #[link_name = "read_contract_entries_by_contract"]
-    pub fn read_contract_entries_by_contract(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64, i64);
+    pub fn read_contract_entries_by_contract(
+        contract_part_1: i64,
+        contract_part_2: i64,
+        contract_part_3: i64,
+        contract_part_4: i64,
+    ) -> (i64, i64, i64);
 
     #[allow(improper_ctypes)]
     #[link_name = "read_contract_entries_by_contract_to_env"]
-    pub fn read_contract_entries_by_contract_to_env(contract_part_1: i64, contract_part_2: i64, contract_part_3: i64, contract_part_4: i64) -> (i64, i64);
+    pub fn read_contract_entries_by_contract_to_env(
+        contract_part_1: i64,
+        contract_part_2: i64,
+        contract_part_3: i64,
+        contract_part_4: i64,
+    ) -> (i64, i64);
 
     #[allow(improper_ctypes)]
     #[link_name = "conclude"]
@@ -102,7 +134,7 @@ pub enum SdkError {
     HostConfiguration,
 
     #[error("Unknown error.")]
-    Unknown
+    Unknown,
 }
 
 impl SdkError {
@@ -113,7 +145,7 @@ impl SdkError {
             ZephyrStatus::DbWriteError => Err(SdkError::DbWrite),
             ZephyrStatus::NoValOnStack => Err(SdkError::NoValOnStack),
             ZephyrStatus::HostConfiguration => Err(SdkError::HostConfiguration),
-            ZephyrStatus::Unknown => Err(SdkError::Unknown)
+            ZephyrStatus::Unknown => Err(SdkError::Unknown),
         }
     }
 }
@@ -146,7 +178,7 @@ impl EnvLogger {
         let log = ZephyrLog {
             level: LogLevel::Error,
             message: message.to_string(),
-            data
+            data,
         };
 
         EnvClient::message_relay(RelayedMessageRequest::Log(log));
@@ -156,7 +188,7 @@ impl EnvLogger {
         let log = ZephyrLog {
             level: LogLevel::Debug,
             message: message.to_string(),
-            data
+            data,
         };
 
         EnvClient::message_relay(RelayedMessageRequest::Log(log));
@@ -166,7 +198,7 @@ impl EnvLogger {
         let log = ZephyrLog {
             level: LogLevel::Warning,
             message: message.to_string(),
-            data
+            data,
         };
 
         EnvClient::message_relay(RelayedMessageRequest::Log(log));
@@ -181,13 +213,8 @@ impl EnvClient {
 
     pub fn message_relay(message: impl Serialize) {
         let serialized = bincode::serialize(&message).unwrap();
-        
-        let res = unsafe {
-            tx_send_message(
-                serialized.as_ptr() as i64, 
-                serialized.len() as i64
-            )
-        };
+
+        let res = unsafe { tx_send_message(serialized.as_ptr() as i64, serialized.len() as i64) };
 
         SdkError::express_from_status(res).unwrap()
     }
@@ -197,13 +224,11 @@ impl EnvClient {
 
         Self::message_relay(message)
     }
-    
+
     pub fn conclude<T: Serialize>(&self, result: T) {
         let v = bincode::serialize(&serde_json::to_string(&result).unwrap()).unwrap();
-        
-        unsafe {
-            conclude_host(v.as_ptr() as i64, v.len() as i64)
-        }
+
+        unsafe { conclude_host(v.as_ptr() as i64, v.len() as i64) }
     }
 
     pub fn read<T: DatabaseInteract>(&self) -> Vec<T> {
@@ -218,11 +243,22 @@ impl EnvClient {
         row.update(&self, conditions)
     }
 
-    pub fn db_write(&self, table_name: &str, columns: &[&str], segments: &[&[u8]]) -> Result<(), SdkError> {
+    pub fn db_write(
+        &self,
+        table_name: &str,
+        columns: &[&str],
+        segments: &[&[u8]],
+    ) -> Result<(), SdkError> {
         Database::write_table(table_name, columns, segments)
     }
 
-    pub fn db_update(&self, table_name: &str, columns: &[&str], segments: &[&[u8]], conditions: &[Condition]) -> Result<(), SdkError> {
+    pub fn db_update(
+        &self,
+        table_name: &str,
+        columns: &[&str],
+        segments: &[&[u8]],
+        conditions: &[Condition],
+    ) -> Result<(), SdkError> {
         Database::update_table(table_name, columns, segments, conditions)
     }
 
@@ -249,10 +285,10 @@ impl EnvClient {
                 let start = memory.offset(offset as isize);
                 core::slice::from_raw_parts(start, size as usize)
             };
-            
+
             Some(stellar_xdr::next::LedgerCloseMeta::from_xdr(slice, Limits::none()).unwrap())
         };
-        
+
         Self { xdr: ledger_meta }
     }
 
@@ -287,7 +323,9 @@ pub mod utils {
     }
 
     pub fn to_scval_symbol(from: &str) -> Result<ScVal, SdkError> {
-        Ok(ScVal::Symbol(ScSymbol(from.try_into().map_err(|_| SdkError::Conversion)?)))
+        Ok(ScVal::Symbol(ScSymbol(
+            from.try_into().map_err(|_| SdkError::Conversion)?,
+        )))
     }
 
     pub fn parts_to_i128(parts: &Int128Parts) -> i128 {
@@ -295,14 +333,16 @@ pub mod utils {
     }
 
     pub fn to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
-        v.try_into()
-            .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+        v.try_into().unwrap_or_else(|v: Vec<T>| {
+            panic!("Expected a Vec of length {} but it was {}", N, v.len())
+        })
     }
 }
 
-
 pub trait DatabaseInteract {
-    fn read_to_rows(env: &EnvClient) -> Vec<Self> where Self: Sized;
+    fn read_to_rows(env: &EnvClient) -> Vec<Self>
+    where
+        Self: Sized;
 
     fn put(&self, env: &EnvClient);
 

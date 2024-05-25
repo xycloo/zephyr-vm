@@ -10,7 +10,8 @@ pub fn get_query(contracts: &[String]) -> Request {
         }
     }
 
-    let query = format!("
+    let query = format!(
+        "
 query Test {{
     eventByContractIds(ids: {contracts_string}) {{
         nodes {{
@@ -29,24 +30,22 @@ query Test {{
         }}
     }}
 }}
-    ", );
+    ",
+    );
 
-    Request {
-        query,
-    }
+    Request { query }
 }
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Vars {
-    pubKey: String 
+    pubKey: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Request {
     query: String,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Ledger {

@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-
 #[derive(Error, Debug)]
 pub enum ParserError {
     #[error("Error when creating new table.")]
@@ -10,5 +9,5 @@ pub enum ParserError {
     WasmDeploymentError,
 
     #[error("Error when compiling program: {0}.")]
-    WasmBuildError(String)
+    WasmBuildError(String),
 }

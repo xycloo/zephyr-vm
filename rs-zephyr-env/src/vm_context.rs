@@ -5,7 +5,12 @@
 use anyhow::Result;
 use std::rc::{Rc, Weak};
 
-use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, error::HostError, vm::Vm, ZephyrMock, ZephyrStandard};
+use crate::{
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    error::HostError,
+    vm::Vm,
+    ZephyrMock, ZephyrStandard,
+};
 
 /// VM Context.
 /// The object is currently simply a wrapper for an
@@ -16,7 +21,9 @@ pub struct VmContext<DB: ZephyrDatabase, L: LedgerStateRead> {
     pub vm: Option<Weak<Vm<DB, L>>>,
 }
 
-impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> ZephyrStandard for VmContext<DB, L> {
+impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> ZephyrStandard
+    for VmContext<DB, L>
+{
     fn zephyr_standard() -> Result<Self>
     where
         Self: Sized,
@@ -25,7 +32,9 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> Z
     }
 }
 
-impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMock for VmContext<DB, L> {
+impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMock
+    for VmContext<DB, L>
+{
     fn mocked() -> Result<Self>
     where
         Self: Sized,

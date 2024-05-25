@@ -66,16 +66,23 @@ impl LedgerStateRead for LedgerReader {
         vec![]
     }*/
 
-    fn read_contract_data_entry_by_contract_id_and_key(&self, contract: soroban_env_host::xdr::ScAddress, key: soroban_env_host::xdr::ScVal) -> Option<ContractDataEntry> {
+    fn read_contract_data_entry_by_contract_id_and_key(
+        &self,
+        contract: soroban_env_host::xdr::ScAddress,
+        key: soroban_env_host::xdr::ScVal,
+    ) -> Option<ContractDataEntry> {
         None
     }
 
-    fn read_contract_data_entries_by_contract_id(&self, contract: soroban_env_host::xdr::ScAddress) -> Vec<ContractDataEntry> {
+    fn read_contract_data_entries_by_contract_id(
+        &self,
+        contract: soroban_env_host::xdr::ScAddress,
+    ) -> Vec<ContractDataEntry> {
         vec![]
     }
 
     //fn read_contract_instance_by_contract_id(&self, contract: soroban_env_host::xdr::ScAddress) -> Option<ContractDataEntry> {
-        //None
+    //None
     //}
 }
 
@@ -106,16 +113,16 @@ impl ZephyrDatabase for MercuryDatabase {
     }
 
     fn update_raw(
-            &self,
-            user_id: i64,
-            written_point_hash: [u8; 16],
-            write_data: &[i64],
-            written: Vec<Vec<u8>>,
-            condition: &[crate::db::database::WhereCond],
-            condition_args: Vec<Vec<u8>>
-        ) -> Result<(), DatabaseError> {
-            Ok(())
-        }
+        &self,
+        user_id: i64,
+        written_point_hash: [u8; 16],
+        write_data: &[i64],
+        written: Vec<Vec<u8>>,
+        condition: &[crate::db::database::WhereCond],
+        condition_args: Vec<Vec<u8>>,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
 }
 
 impl ZephyrStandard for MercuryDatabase {
