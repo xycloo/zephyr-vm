@@ -1718,8 +1718,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             );
 
             FunctionInfo {
-                module: "v",
-                func: "g",
+                module: "b",
+                func: "3",
                 wrapped,
             }
         };
