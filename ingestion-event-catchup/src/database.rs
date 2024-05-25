@@ -1,9 +1,13 @@
 use std::env;
 
 use anyhow::Result;
-use postgres::{self, types::{ToSql, Type}, Client, NoTls};
-use serde::{Deserialize, Serialize};
+use postgres::{
+    self,
+    types::{ToSql, Type},
+    Client, NoTls,
+};
 use rs_zephyr_common::DatabaseError;
+use serde::{Deserialize, Serialize};
 use zephyr::{
     db::database::{WhereCond, ZephyrDatabase},
     ZephyrMock, ZephyrStandard,
@@ -15,16 +19,24 @@ pub mod execution {
     use postgres::types::Type;
 
     pub async fn read_binary(id: i64) -> Vec<u8> {
-        let (client, connection) = tokio_postgres::connect(&env::var("INGESTOR_DB").unwrap(), tokio_postgres::NoTls).await.unwrap();
-        
+        let (client, connection) =
+            tokio_postgres::connect(&env::var("INGESTOR_DB").unwrap(), tokio_postgres::NoTls)
+                .await
+                .unwrap();
+
         tokio::spawn(async move {
             if let Err(e) = connection.await {
                 eprintln!("connection error: {}", e);
             }
         });
-        
+
         let code = client
-            .prepare_typed("select code from public.zephyr_programs WHERE id = $1", &[Type::INT8]).await.unwrap();
+            .prepare_typed(
+                "select code from public.zephyr_programs WHERE id = $1",
+                &[Type::INT8],
+            )
+            .await
+            .unwrap();
 
         let rows = client.query(&code, &[&id]).await.unwrap();
         let code: Vec<u8> = rows.get(0).unwrap().get(0);
@@ -138,10 +150,9 @@ impl ZephyrDatabase for MercuryDatabase {
         };
 
         let query_res = client.query(&stmt, &[]);
-        let result = if let Ok(res) = query_res
-         {
+        let result = if let Ok(res) = query_res {
             let mut rows = Vec::new();
-            
+
             for row in res {
                 let mut row_wrapped = Vec::new();
 
@@ -149,7 +160,9 @@ impl ZephyrDatabase for MercuryDatabase {
                 for in_row_idx in 0..row_length {
                     // currently we return an error.
                     // an alternative would be wrapping in an option.
-                    let bytes = row.try_get(in_row_idx).map_err(|_| DatabaseError::ZephyrQueryError)?;
+                    let bytes = row
+                        .try_get(in_row_idx)
+                        .map_err(|_| DatabaseError::ZephyrQueryError)?;
                     row_wrapped.push(TypeWrap(bytes))
                 }
 
@@ -236,15 +249,15 @@ impl ZephyrDatabase for MercuryDatabase {
     }
 
     fn update_raw(
-            &self,
-            _: i64,
-            written_point_hash: [u8; 16],
-            write_data: &[i64],
-            written: Vec<Vec<u8>>,
-            condition: &[zephyr::db::database::WhereCond],
-            condition_args: Vec<Vec<u8>>
-        ) -> Result<(), DatabaseError> {
-            let connection = Client::connect(&self.postgres_arg, NoTls);
+        &self,
+        _: i64,
+        written_point_hash: [u8; 16],
+        write_data: &[i64],
+        written: Vec<Vec<u8>>,
+        condition: &[zephyr::db::database::WhereCond],
+        condition_args: Vec<Vec<u8>>,
+    ) -> Result<(), DatabaseError> {
+        let connection = Client::connect(&self.postgres_arg, NoTls);
         let mut client = if let Ok(client) = connection {
             client
         } else {
@@ -292,7 +305,11 @@ impl ZephyrDatabase for MercuryDatabase {
                     };
 
                     if idx != condition.len() - 1 {
-                        query.push_str(&format!("{} = ${} AND ", colname, write_data.len() + idx + 1));
+                        query.push_str(&format!(
+                            "{} = ${} AND ",
+                            colname,
+                            write_data.len() + idx + 1
+                        ));
                     } else {
                         query.push_str(&format!("{} = ${}", colname, write_data.len() + idx + 1));
                     }

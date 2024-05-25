@@ -5,9 +5,13 @@
 
 use anyhow::Result;
 use std::{cell::RefCell, rc::Rc};
-use wasmi::{Store, errors::FuelError};
+use wasmi::{errors::FuelError, Store};
 
-use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, host::Host, ZephyrStandard};
+use crate::{
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    host::Host,
+    ZephyrStandard,
+};
 
 const STANDARD_FUEL: u64 = 1_000_000_000;
 const STANDARD_WRITE_MAX: usize = 64_000;
@@ -60,7 +64,10 @@ impl ZephyrStandard for Budget {
 
 impl Budget {
     /// Allocates the maximum fuel to the provided store object.
-    pub fn infer_fuel<DB: ZephyrDatabase, L: LedgerStateRead>(&self, store: &mut Store<Host<DB, L>>) -> Result<(), FuelError> {
+    pub fn infer_fuel<DB: ZephyrDatabase, L: LedgerStateRead>(
+        &self,
+        store: &mut Store<Host<DB, L>>,
+    ) -> Result<(), FuelError> {
         store.add_fuel(self.0.borrow().limits.fuel)
     }
 }

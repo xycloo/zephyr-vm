@@ -7,7 +7,7 @@ pub struct TableRows {
 }
 
 pub enum Condition {
-    ColumnEqualTo(String, Vec<u8>)
+    ColumnEqualTo(String, Vec<u8>),
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -26,7 +26,6 @@ impl Database {
             .map(|col| symbol::Symbol::try_from_bytes(col.as_bytes()).unwrap().0 as i64)
             .collect::<Vec<i64>>();
 
-        
         // Load instructions to env pseudo-store.
         unsafe {
             env_push_stack(table_name.0 as i64);
@@ -37,29 +36,30 @@ impl Database {
             }
         };
 
-        // Receive offset and size from env. 
+        // Receive offset and size from env.
         let (status, offset, size) = unsafe { read_raw() };
         SdkError::express_from_status(status)?;
-        
+
         let table = {
             let memory: *const u8 = offset as *const u8;
 
-            let slice = unsafe {
-                core::slice::from_raw_parts(memory, size as usize)
-            };
+            let slice = unsafe { core::slice::from_raw_parts(memory, size as usize) };
 
             if let Ok(table) = bincode::deserialize::<TableRows>(slice) {
                 table
             } else {
-                return Err(SdkError::Conversion)
+                return Err(SdkError::Conversion);
             }
         };
 
         Ok(table)
-
     }
 
-    pub fn write_table(table_name: &str, columns: &[&str], segments: &[&[u8]]) -> Result<(), SdkError> {
+    pub fn write_table(
+        table_name: &str,
+        columns: &[&str],
+        segments: &[&[u8]],
+    ) -> Result<(), SdkError> {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
@@ -91,7 +91,12 @@ impl Database {
         SdkError::express_from_status(status)
     }
 
-    pub fn update_table(table_name: &str, columns: &[&str], segments: &[&[u8]], conditions: &[Condition]) -> Result<(), SdkError> {
+    pub fn update_table(
+        table_name: &str,
+        columns: &[&str],
+        segments: &[&[u8]],
+        conditions: &[Condition],
+    ) -> Result<(), SdkError> {
         let table_name = symbol::Symbol::try_from_bytes(table_name.as_bytes()).unwrap();
         let cols = columns
             .into_iter()
@@ -123,10 +128,14 @@ impl Database {
             let mut args = Vec::new();
             for cond in conditions {
                 let (colname, operator, value) = match cond {
-                    Condition::ColumnEqualTo(colname, value) => (colname, 0, value)
+                    Condition::ColumnEqualTo(colname, value) => (colname, 0, value),
                 };
 
-                env_push_stack(symbol::Symbol::try_from_bytes(colname.as_bytes()).unwrap().0 as i64);
+                env_push_stack(
+                    symbol::Symbol::try_from_bytes(colname.as_bytes())
+                        .unwrap()
+                        .0 as i64,
+                );
                 env_push_stack(operator as i64);
 
                 args.push((value.as_ptr() as i64, value.len() as i64))

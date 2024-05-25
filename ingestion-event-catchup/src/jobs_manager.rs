@@ -4,14 +4,14 @@ use tokio::{sync::Mutex, task::JoinHandle};
 
 pub struct JobsManager {
     jobs: Mutex<BTreeMap<u32, JoinHandle<String>>>,
-    latest: Mutex<u32>
+    latest: Mutex<u32>,
 }
 
 impl JobsManager {
     pub fn new() -> Self {
         Self {
             jobs: BTreeMap::new().into(),
-            latest: 0.into()
+            latest: 0.into(),
         }
     }
 
@@ -29,7 +29,7 @@ impl JobsManager {
         let jobs = self.jobs.lock().await;
         if let Some(job) = jobs.get(&id) {
             if job.is_finished() {
-                return Some("Catchup completed".into())
+                return Some("Catchup completed".into());
             }
         }
 

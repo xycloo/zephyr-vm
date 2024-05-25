@@ -10,7 +10,7 @@ use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 #[derive(Clone)]
 pub struct StackImpl {
     pub inner: RefCell<Vec<i64>>,
-    step: RefCell<usize>
+    step: RefCell<usize>,
 }
 
 /// Stack implementation wrapper.
@@ -21,7 +21,7 @@ impl ZephyrStandard for StackImpl {
     fn zephyr_standard() -> Result<Self> {
         Ok(Self {
             inner: RefCell::new(Vec::new()),
-            step: RefCell::new(0)
+            step: RefCell::new(0),
         })
     }
 }

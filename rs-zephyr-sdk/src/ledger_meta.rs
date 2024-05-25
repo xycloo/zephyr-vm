@@ -1,4 +1,8 @@
-use stellar_xdr::next::{ContractEvent, GeneralizedTransactionSet, LedgerCloseMeta, LedgerEntry, LedgerEntryChange, LedgerKey, TransactionEnvelope, TransactionMeta, TransactionPhase, TransactionResultMeta, TransactionResultResult, TransactionSet, TxSetComponent};
+use stellar_xdr::next::{
+    ContractEvent, GeneralizedTransactionSet, LedgerCloseMeta, LedgerEntry, LedgerEntryChange,
+    LedgerKey, TransactionEnvelope, TransactionMeta, TransactionPhase, TransactionResultMeta,
+    TransactionResultResult, TransactionSet, TxSetComponent,
+};
 
 #[derive(Clone)]
 pub struct EntryChanges {
@@ -33,9 +37,7 @@ impl<'a> MetaReader<'a> {
 
     pub fn envelopes(&self) -> Vec<TransactionEnvelope> {
         match &self.0 {
-            LedgerCloseMeta::V0(v0) => {
-                v0.tx_set.txs.to_vec()
-            },
+            LedgerCloseMeta::V0(v0) => v0.tx_set.txs.to_vec(),
             LedgerCloseMeta::V1(v1) => {
                 let phases = match &v1.tx_set {
                     GeneralizedTransactionSet::V1(v1) => &v1.phases,
@@ -68,7 +70,7 @@ impl<'a> MetaReader<'a> {
 
     pub fn envelopes_with_meta(&self) -> Vec<(&TransactionEnvelope, &TransactionResultMeta)> {
         let mut composed = Vec::new();
-        
+
         match &self.0 {
             LedgerCloseMeta::V0(v0) => (),
             LedgerCloseMeta::V1(v1) => {
@@ -84,9 +86,11 @@ impl<'a> MetaReader<'a> {
                                     TxSetComponent::TxsetCompTxsMaybeDiscountedFee(
                                         txset_maybe_discounted_fee,
                                     ) => {
-                                        for (idx, tx_envelope) in txset_maybe_discounted_fee.txs.iter().enumerate() {
+                                        for (idx, tx_envelope) in
+                                            txset_maybe_discounted_fee.txs.iter().enumerate()
+                                        {
                                             let txmeta = &v1.tx_processing[idx];
-                                            
+
                                             composed.push((tx_envelope, txmeta))
                                         }
                                     }
@@ -95,22 +99,16 @@ impl<'a> MetaReader<'a> {
                         }
                     }
                 }
-
             }
         };
 
         composed
     }
 
-
     pub fn tx_processing(&self) -> Vec<TransactionResultMeta> {
         match &self.0 {
-            LedgerCloseMeta::V1(v1) => {
-                v1.tx_processing.to_vec()
-            },
-            LedgerCloseMeta::V0(v0) => {
-                v0.tx_processing.to_vec()
-            },
+            LedgerCloseMeta::V1(v1) => v1.tx_processing.to_vec(),
+            LedgerCloseMeta::V0(v0) => v0.tx_processing.to_vec(),
         }
     }
 
@@ -128,7 +126,7 @@ impl<'a> MetaReader<'a> {
                     let success = match result {
                         TransactionResultResult::TxSuccess(_) => true,
                         TransactionResultResult::TxFeeBumpInnerSuccess(_) => true,
-                        _ => false
+                        _ => false,
                     };
 
                     if success {
@@ -219,7 +217,7 @@ impl<'a> MetaReader<'a> {
 
     pub fn soroban_events(&self) -> Vec<ContractEvent> {
         let mut events = Vec::new();
-        
+
         for (_, result) in self.envelopes_with_meta() {
             if let TransactionMeta::V3(v3) = &result.tx_apply_processing {
                 if let Some(soroban) = &v3.soroban_meta {

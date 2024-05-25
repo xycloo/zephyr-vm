@@ -5,8 +5,8 @@ use std::io::Read;
 
 use clap::{Parser, Subcommand};
 
-mod parser;
 mod error;
+mod parser;
 
 pub use parser::ZephyrProjectParser;
 
@@ -49,7 +49,7 @@ struct NewZephyrTableClient {
 #[derive(Deserialize, Serialize, Debug)]
 struct CodeUploadClient {
     code: Option<Vec<u8>>,
-    force_replace: Option<bool>
+    force_replace: Option<bool>,
 }
 
 pub struct MercuryClient {
@@ -62,10 +62,7 @@ impl MercuryClient {
         Self { base_url, jwt }
     }
 
-    pub async fn new_table(
-        &self,
-        table: Table,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn new_table(&self, table: Table) -> Result<(), Box<dyn std::error::Error>> {
         let columns = table.columns;
         let mut cols = Vec::new();
 
@@ -118,7 +115,11 @@ impl MercuryClient {
         Ok(())
     }
 
-    pub async fn deploy(&self, wasm: String, force_replace: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn deploy(
+        &self,
+        wasm: String,
+        force_replace: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Replace "input.wasm" with the path to your Wasm file.
         println!("Reading wasm {}", wasm);
         let mut input_file = File::open(wasm)?;
@@ -127,7 +128,10 @@ impl MercuryClient {
         input_file.read_to_end(&mut buffer)?;
         println!("(Size of program is {})", buffer.len());
 
-        let code = CodeUploadClient { code: Some(buffer),  force_replace: Some(force_replace)};
+        let code = CodeUploadClient {
+            code: Some(buffer),
+            force_replace: Some(force_replace),
+        };
 
         // Convert the code object to JSON
         let json_code = serde_json::to_string(&code)?;
@@ -163,4 +167,3 @@ impl MercuryClient {
         Ok(())
     }
 }
-

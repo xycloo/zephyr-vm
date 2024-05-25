@@ -14,14 +14,14 @@ use crate::{ZephyrMock, ZephyrStandard};
 pub enum WhereCond {
     /// Where column i64 is equal to the corresponding condition
     /// argument.
-    ColEq(i64)
+    ColEq(i64),
 }
 
 impl WhereCond {
     pub(crate) fn from_column_and_operator(col: i64, operator: i64) -> Result<Self> {
         match operator {
             0 => Ok(Self::ColEq(col)),
-            _ => Err(DatabaseError::OperatorError.into())
+            _ => Err(DatabaseError::OperatorError.into()),
         }
     }
 }
@@ -80,7 +80,7 @@ pub trait ZephyrDatabase {
         write_data: &[i64],
         written: Vec<Vec<u8>>,
         condition: &[WhereCond],
-        condition_args: Vec<Vec<u8>>
+        condition_args: Vec<Vec<u8>>,
     ) -> Result<(), DatabaseError>;
 }
 

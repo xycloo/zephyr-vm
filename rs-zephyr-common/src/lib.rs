@@ -2,9 +2,9 @@
 //! This crate omits the structures that are shared between
 //! Zephyr and Mercury due to the latter's closed-source nature.
 
-pub mod wrapping;
 pub mod http;
 pub mod log;
+pub mod wrapping;
 
 pub fn to_fixed<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
@@ -18,7 +18,7 @@ pub enum ZephyrStatus {
     DbWriteError = 2,
     DbReadError = 3,
     NoValOnStack = 4,
-    HostConfiguration = 5
+    HostConfiguration = 5,
 }
 
 use http::AgnosticRequest;
@@ -48,7 +48,6 @@ pub enum DatabaseError {
     OperatorError,
 }
 
-
 impl From<anyhow::Error> for ZephyrStatus {
     fn from(value: anyhow::Error) -> Self {
         match value.downcast_ref() {
@@ -58,8 +57,8 @@ impl From<anyhow::Error> for ZephyrStatus {
             Some(DatabaseError::ReadOnWriteOnly) => ZephyrStatus::HostConfiguration,
             Some(DatabaseError::WriteOnReadOnly) => ZephyrStatus::HostConfiguration,
             Some(DatabaseError::OperatorError) => ZephyrStatus::DbWriteError, // todo: specific error
-            None => ZephyrStatus::Unknown
-        } 
+            None => ZephyrStatus::Unknown,
+        }
     }
 }
 
@@ -87,12 +86,12 @@ pub enum ZephyrVal {
     I32(i32),
     F32(f32),
     String(String),
-    Bytes(Vec<u8>)
+    Bytes(Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum ZephyrValError {
-    ConversionError
+    ConversionError,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -101,7 +100,7 @@ pub struct ContractDataEntry {
     pub key: ScVal,
     pub entry: LedgerEntry,
     pub durability: i32,
-    pub last_modified: i32
+    pub last_modified: i32,
 }
 
 macro_rules! impl_inner_from {
@@ -133,9 +132,8 @@ impl_inner_from!(F32, f32);
 impl_inner_from!(String, String);
 impl_inner_from!(Bytes, Vec<u8>);
 
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum RelayedMessageRequest {
     Http(AgnosticRequest),
-    Log(ZephyrLog)
+    Log(ZephyrLog),
 }

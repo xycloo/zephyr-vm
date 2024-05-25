@@ -30,6 +30,5 @@ pub enum HostError {
     InvalidFunctionResult,
 
     #[error("Tried using the transmitter but didn't provide one")]
-    NoTransmitter
+    NoTransmitter,
 }
-

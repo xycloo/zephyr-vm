@@ -1,16 +1,14 @@
-use std::{fs::File, io::Read, path::Path, process::Command};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::{fs::File, io::Read, path::Path, process::Command};
 
 use crate::{error::ParserError, MercuryClient};
-
 
 impl Config {
     fn tables(&self) -> Vec<Table> {
         self.tables.clone()
     }
 }
-
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -23,18 +21,18 @@ pub struct Config {
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Table {
     pub name: String,
-    pub columns: Vec<Column>
+    pub columns: Vec<Column>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Column {
     pub name: String,
-    pub col_type: String
+    pub col_type: String,
 }
 
 pub struct ZephyrProjectParser {
     config: Config,
-    client: MercuryClient
+    client: MercuryClient,
 }
 
 impl ZephyrProjectParser {
@@ -48,7 +46,7 @@ impl ZephyrProjectParser {
 
         let parser = Self {
             client,
-            config: toml::from_str(&project_definition)?
+            config: toml::from_str(&project_definition)?,
         };
 
         Ok(parser)
@@ -56,8 +54,8 @@ impl ZephyrProjectParser {
 
     pub fn build_wasm(&self) -> Result<()> {
         let output = Command::new("cargo")
-        .args(&["build", "--release", "--target=wasm32-unknown-unknown"])
-        .output()?;
+            .args(&["build", "--release", "--target=wasm32-unknown-unknown"])
+            .output()?;
 
         if !output.status.success() {
             let error = if !output.stdout.is_empty() {
@@ -66,7 +64,7 @@ impl ZephyrProjectParser {
                 String::new()
             };
 
-            return Err(ParserError::WasmBuildError(error).into())
+            return Err(ParserError::WasmBuildError(error).into());
         }
 
         Ok(())
@@ -75,7 +73,7 @@ impl ZephyrProjectParser {
     pub async fn deploy_tables(&self) -> Result<()> {
         for table in self.config.tables() {
             if let Err(_) = self.client.new_table(table).await {
-                return Err(ParserError::TableCreationError.into())
+                return Err(ParserError::TableCreationError.into());
             };
         }
 
@@ -87,9 +85,12 @@ impl ZephyrProjectParser {
         let path = if let Some(target_dir) = target {
             format!("{}/{}.wasm", target_dir, project_name.replace('-', "_"))
         } else {
-            format!("./target/wasm32-unknown-unknown/release/{}.wasm", project_name.replace('-', "_"))
+            format!(
+                "./target/wasm32-unknown-unknown/release/{}.wasm",
+                project_name.replace('-', "_")
+            )
         };
-        
+
         if let Err(_) = self.client.deploy(path, true).await {
             return Err(ParserError::WasmDeploymentError.into());
         };
@@ -108,14 +109,17 @@ mod test {
             name: "zephyr-soroban-op-ratio".into(),
             tables: vec![Table {
                 name: "opratio".into(),
-                columns: vec![Column {
-                    name: "soroban".into(),
-                    col_type: "BYTEA".into() // only supported type as of now 
-                }, Column {
-                    name: "ratio".into(),
-                    col_type: "BYTEA".into() // only supported type as of now 
-                }]
-            }]
+                columns: vec![
+                    Column {
+                        name: "soroban".into(),
+                        col_type: "BYTEA".into(), // only supported type as of now
+                    },
+                    Column {
+                        name: "ratio".into(),
+                        col_type: "BYTEA".into(), // only supported type as of now
+                    },
+                ],
+            }],
         };
 
         println!("{}", toml::to_string(&config).unwrap());

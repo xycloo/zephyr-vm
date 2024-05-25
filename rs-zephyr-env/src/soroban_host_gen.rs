@@ -1,21 +1,24 @@
 use std::fmt::Debug;
 
-use crate::{db::{database::ZephyrDatabase, ledger::LedgerStateRead}, host::{FunctionInfo, Host, SorobanTempFunctionInfo}};
-use soroban_env_macros::generate_call_macro_with_all_host_functions;
-use soroban_env_host::{wasmi::{
+use crate::{
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    host::{FunctionInfo, Host, SorobanTempFunctionInfo},
+};
+use soroban_env_host::wasmi::{
     core::{Trap, TrapCode::BadSignature},
     Value,
-}};
-use soroban_env_host::{
-    AddressObject, Bool, BytesObject, DurationObject, Error, I128Object, I256Object, I256Val,
-    I64Object, MapObject, StorageType, StringObject, Symbol, SymbolObject, TimepointObject,
-    U128Object, U256Object, U256Val, U32Val, U64Object, U64Val, Val, VecObject, Void, HostError, 
-    VmCaller, WasmiMarshal, TryFromVal
 };
+use soroban_env_host::{
+    AddressObject, Bool, BytesObject, DurationObject, Error, HostError, I128Object, I256Object,
+    I256Val, I64Object, MapObject, StorageType, StringObject, Symbol, SymbolObject,
+    TimepointObject, TryFromVal, U128Object, U256Object, U256Val, U32Val, U64Object, U64Val, Val,
+    VecObject, VmCaller, Void, WasmiMarshal,
+};
+use soroban_env_macros::generate_call_macro_with_all_host_functions;
 
 use soroban_env_host::{
-    xdr::{ContractCostType, ScErrorCode, ScErrorType, Hash},
-    CheckedEnvArg, EnvBase, VmCallerEnv, Host as SorobanHost
+    xdr::{ContractCostType, Hash, ScErrorCode, ScErrorType},
+    CheckedEnvArg, EnvBase, Host as SorobanHost, VmCallerEnv,
 };
 
 use wasmi::{Func, Store};
@@ -27,7 +30,10 @@ pub(crate) trait RelativeObjectConversion: WasmiMarshal + Clone {
     fn relative_to_absolute(self, _host: &SorobanHost) -> Result<Self, HostError> {
         Ok(self)
     }
-    fn try_marshal_from_relative_value(v: soroban_env_host::wasmi::Value, host: &SorobanHost) -> Result<Self, Trap> {
+    fn try_marshal_from_relative_value(
+        v: soroban_env_host::wasmi::Value,
+        host: &SorobanHost,
+    ) -> Result<Self, Trap> {
         let val = Self::try_marshal_from_value(v).ok_or_else(|| {
             Trap::from(HostError::from(Error::from_type_and_code(
                 ScErrorType::Value,
@@ -39,11 +45,14 @@ pub(crate) trait RelativeObjectConversion: WasmiMarshal + Clone {
 
         Ok(val.relative_to_absolute(host).unwrap_or(backup))
     }
-    fn marshal_relative_from_self(self, host: &SorobanHost) -> Result<soroban_env_host::wasmi::Value, Trap> {
+    fn marshal_relative_from_self(
+        self,
+        host: &SorobanHost,
+    ) -> Result<soroban_env_host::wasmi::Value, Trap> {
         let backup = self.clone();
 
         let rel = self.absolute_to_relative(host).unwrap_or(backup);
-        
+
         Ok(Self::marshal_from_self(rel))
     }
 }
@@ -98,7 +107,6 @@ macro_rules! homogenize_tuple {
         &[&$u.0, &$u.1, &$u.2, &$u.3, &$u.4]
     };
 }
-
 
 // Define a relative-to-absolute impl for any type that is (a) mentioned
 // in a host function type signature in env and (b) might possibly carry an
@@ -243,12 +251,12 @@ macro_rules! generate_dispatch_functions {
                         // both types into and out of i64, and `soroban_env_host::wasmi::Value`
                         // happens to be a natural switching point for that: we have
                         // conversions to and from both Val and i64 / u64 for
-                        // soroban_env_host::wasmi::Value.                        
+                        // soroban_env_host::wasmi::Value.
                         let res: Result<_, HostError> = host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).unwrap(), &host).unwrap()),*);
                         res
                     };
 
-                    
+
                     (host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
                         let res = effects();
                         /*if host.tracing_enabled()
@@ -296,7 +304,7 @@ macro_rules! generate_dispatch_functions {
                         let res = match res {
                             Ok(ok) => {
                                 let ok = ok.check_env_arg(&host).unwrap();
-                                
+
                                 let val: Value = ok.marshal_relative_from_self(&host).unwrap();
                                 if let Value::I64(v) = val {
                                     Ok((v,))
@@ -333,7 +341,7 @@ macro_rules! host_function_info_helper {
     {$mod_str:literal, $fn_id:literal, $args:tt, $func_id:ident } => {
         SorobanTempFunctionInfo {
             module: $mod_str,
-            func: $fn_id,            
+            func: $fn_id,
             wrapped: |store| Func::wrap(store, $func_id),
         }
     };
@@ -382,7 +390,7 @@ macro_rules! generate_host_function_infos {
         //   2. The function dispatch path when guest code calls out of the VM, where we
         //      look up the numbered function the guest is requesting in this array and
         //      call its associated dispatch function.
-        
+
         pub(crate) fn get_all_host_functions<DB, L>() -> Vec<SorobanTempFunctionInfo<DB, L>> where DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static {
             let mut fns: Vec<SorobanTempFunctionInfo<DB, L>> = Vec::new();
 
@@ -413,17 +421,22 @@ macro_rules! generate_host_function_infos {
 
 call_macro_with_all_host_functions! { generate_host_function_infos }
 
-pub fn generate_host_fn_infos<DB, L>(store: &mut Store<Host<DB, L>>) -> Vec<FunctionInfo> where DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static {
+pub fn generate_host_fn_infos<DB, L>(store: &mut Store<Host<DB, L>>) -> Vec<FunctionInfo>
+where
+    DB: ZephyrDatabase + Clone + 'static,
+    L: LedgerStateRead + 'static,
+{
     // Here we invoke the x-macro passing generate_host_function_infos as its callback macro.
     let store = store;
-    
-    let functions = get_all_host_functions::<DB, L>().iter().map(|temp| {
-        FunctionInfo {
+
+    let functions = get_all_host_functions::<DB, L>()
+        .iter()
+        .map(|temp| FunctionInfo {
             module: temp.module,
             func: temp.func,
-            wrapped: (temp.wrapped)(store)
-        }
-    }).collect();
+            wrapped: (temp.wrapped)(store),
+        })
+        .collect();
 
     functions
 }

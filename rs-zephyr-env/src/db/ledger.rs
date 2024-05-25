@@ -13,7 +13,6 @@ use soroban_env_host::xdr::{ContractDataDurability, LedgerEntry, ScAddress, ScVa
 
 use crate::{ZephyrMock, ZephyrStandard};
 
-
 /// Reads state from the Stellar Ledger.
 pub trait LedgerStateRead {
     // Returns a vector of Contract Data Entries given a set of contract addresses.
@@ -24,12 +23,19 @@ pub trait LedgerStateRead {
 
     // Returns a contract instance entry given a contract address.
     //fn read_contract_instance_by_contract_id(&self, contract: ScAddress) -> Option<ContractDataEntry>;
-    
+
     /// Returns a contract data entry given a contract address and a ledger key.
-    fn read_contract_data_entry_by_contract_id_and_key(&self, contract: ScAddress, key: ScVal) -> Option<ContractDataEntry>;
+    fn read_contract_data_entry_by_contract_id_and_key(
+        &self,
+        contract: ScAddress,
+        key: ScVal,
+    ) -> Option<ContractDataEntry>;
 
     /// Returns all entries for a contract.
-    fn read_contract_data_entries_by_contract_id(&self, contract: ScAddress) -> Vec<ContractDataEntry>;
+    fn read_contract_data_entries_by_contract_id(
+        &self,
+        contract: ScAddress,
+    ) -> Vec<ContractDataEntry>;
 }
 
 #[derive(Clone)]
@@ -44,36 +50,40 @@ pub struct Ledger<L: LedgerStateRead>(pub(crate) LedgerImpl<L>);
 
 impl<L: LedgerStateRead + ZephyrStandard> ZephyrStandard for LedgerImpl<L> {
     fn zephyr_standard() -> Result<Self>
-        where
-            Self: Sized {
+    where
+        Self: Sized,
+    {
         Ok(Self {
-            ledger: Box::new(L::zephyr_standard()?)
+            ledger: Box::new(L::zephyr_standard()?),
         })
     }
 }
 
 impl<L: LedgerStateRead + ZephyrStandard> ZephyrStandard for Ledger<L> {
     fn zephyr_standard() -> Result<Self>
-        where
-            Self: Sized {
+    where
+        Self: Sized,
+    {
         Ok(Self(LedgerImpl::zephyr_standard()?))
     }
 }
 
 impl<L: LedgerStateRead + ZephyrMock> ZephyrMock for LedgerImpl<L> {
     fn mocked() -> Result<Self>
-        where
-            Self: Sized {
+    where
+        Self: Sized,
+    {
         Ok(Self {
-            ledger: Box::new(L::mocked()?)
+            ledger: Box::new(L::mocked()?),
         })
     }
 }
 
 impl<L: LedgerStateRead + ZephyrMock> ZephyrMock for Ledger<L> {
     fn mocked() -> Result<Self>
-        where
-            Self: Sized {
+    where
+        Self: Sized,
+    {
         Ok(Self(LedgerImpl::mocked()?))
     }
 }
