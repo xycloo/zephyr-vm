@@ -176,13 +176,12 @@ impl ExecutionWrapper {
 
     pub async fn retrieve_events(&self, contracts_ids: &[String]) -> query::Response {
         let jwt = &self.request.jwt;
-        let network = std::env::var("NETWORK").unwrap_or_else(|e| panic!("{}: {}", "NETWORK", e));
 
         let client = reqwest::Client::new();
 
         let graphql_endpoint = if env::var("LOCAL").unwrap() == "true" {
             "http://localhost:8084/graphql"
-        } else if network == "mainnet" {
+        } else if &self.network == "Public Global Stellar Network ; September 2015" {
             "https://mainnet.mercurydata.app:2083/graphql"
         } else {
             "https://api.mercurydata.app:2083/graphql"
