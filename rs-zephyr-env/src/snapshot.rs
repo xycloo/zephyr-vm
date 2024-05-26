@@ -9,6 +9,28 @@ use soroban_env_host::xdr::{
 
 pub struct DynamicSnapshot {}
 
+pub(crate) mod snapshot_utils {
+    use rusqlite::{params, Connection};
+
+    pub fn get_current_ledger_sequence() -> i32 {
+        let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
+        let query_string = format!("SELECT ledgerseq FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
+
+        let mut stmt = conn.prepare(&query_string).unwrap();
+        let mut entries = stmt.query(params![]).unwrap();
+
+        let row = entries.next().unwrap();
+
+        if row.is_none() {
+            // TODO: error log
+            println!("unrecoverable: no ledger running");
+            return 0;
+        }
+
+        row.unwrap().get(0).unwrap_or(0)
+    }
+}
+
 impl SnapshotSource for DynamicSnapshot {
     fn get(
         &self,

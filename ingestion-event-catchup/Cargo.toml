@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sha2 = "0.10.8"
 rusqlite = "0.31.0"
 zephyr = { path = "../rs-zephyr-env", features = ["testutils"] }
 rs-zephyr-common = { path = "../rs-zephyr-common" }

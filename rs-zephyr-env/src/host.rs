@@ -30,7 +30,7 @@ use std::{
 };
 use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
 
-use crate::snapshot::DynamicSnapshot;
+use crate::snapshot::{snapshot_utils, DynamicSnapshot};
 use crate::soroban_host_gen::{self, RelativeObjectConversion};
 use crate::vm::MemoryManager;
 use crate::{
@@ -118,6 +118,9 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// Host id.
     pub id: i64,
 
+    /// Network id hashed.
+    pub network_id: [u8; 32],
+
     /// Transmitter
     pub transmitter: RefCell<Option<ZephyrRelayer>>,
 
@@ -170,7 +173,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     /// and the entity it is bound to. For instance, in Mercury
     /// the host id is the id of a Mercury user. This is needed to
     /// implement role constraints in Zephyr.
-    pub fn from_id(id: i64) -> Result<Self> {
+    pub fn from_id(id: i64, network_id: [u8; 32]) -> Result<Self> {
         let host = soroban_env_host::Host::test_host_with_recording_footprint();
         host.as_budget().reset_unlimited().unwrap();
         host.enable_debug();
@@ -184,6 +187,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
 
         Ok(Self(Rc::new(HostImpl {
             id,
+            network_id,
             transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
@@ -213,6 +217,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
 
         Ok(Self(Rc::new(HostImpl {
             id: 0,
+            network_id: [0; 32],
             transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
@@ -864,6 +869,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
         let mut ledger_info = LedgerInfo::default();
         ledger_info.protocol_version = 21;
+        ledger_info.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
+        ledger_info.network_id = host.0.network_id;
 
         println!("simulating the tx");
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(

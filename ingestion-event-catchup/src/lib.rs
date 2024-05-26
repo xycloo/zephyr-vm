@@ -166,11 +166,12 @@ impl FunctionRequest {
 #[derive(Clone, Debug)]
 pub struct ExecutionWrapper {
     request: FunctionRequest,
+    network: String,
 }
 
 impl ExecutionWrapper {
-    pub fn new(request: FunctionRequest) -> Self {
-        Self { request }
+    pub fn new(request: FunctionRequest, network: String) -> Self {
+        Self { request, network }
     }
 
     pub async fn retrieve_events(&self, contracts_ids: &[String]) -> query::Response {
@@ -415,7 +416,47 @@ impl ExecutionWrapper {
     }
 }
 
+
+mod newtork_utils {
+    use sha2::{Digest, Sha256};
+    use soroban_env_host::xdr::Hash;
+
+    pub struct Network {
+        passphrase: Vec<u8>,
+        id: [u8; 32],
+    }
+
+    pub type BinarySha256Hash = [u8; 32];
+
+    pub fn sha256<T: AsRef<[u8]>>(data: T) -> BinarySha256Hash {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        hasher.finalize().as_slice().try_into().unwrap()
+    }
+
+    impl Network {
+        /// Construct a new `Network` for the given `passphrase`
+        pub fn new(passphrase: &[u8]) -> Network {
+            let id = sha256(passphrase);
+            let passphrase = passphrase.to_vec();
+            Network { passphrase, id }
+        }
+
+        /// Return the SHA-256 hash of the passphrase
+        ///
+        /// This hash is used for signing transactions.
+        pub fn get_id(&self) -> Hash {
+            Hash(self.id)
+        }
+    }
+}
+
 impl ExecutionWrapper {
+    fn get_network_id(&self) -> Hash {
+        let network = newtork_utils::Network::new(self.network.as_bytes());
+        network.get_id()
+    }
+
     fn execute_with_transition(
         &self,
         sender: UnboundedSender<Vec<u8>>,
@@ -423,7 +464,7 @@ impl ExecutionWrapper {
         binary: Vec<u8>,
     ) -> String {
         let mut host =
-            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64).unwrap();
+            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64, self.get_network_id().0).unwrap();
         host.add_transmitter(sender);
 
         let start = std::time::Instant::now();
@@ -448,7 +489,7 @@ impl ExecutionWrapper {
         function: InvokeZephyrFunction,
     ) -> String {
         let mut host =
-            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64).unwrap();
+            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64, self.get_network_id().0).unwrap();
         host.add_transmitter(sender);
 
         let start = std::time::Instant::now();
