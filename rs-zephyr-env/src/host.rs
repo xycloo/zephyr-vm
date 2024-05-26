@@ -871,6 +871,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         ledger_info.protocol_version = 21;
         ledger_info.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
         ledger_info.network_id = host.0.network_id;
+        ledger_info.max_entry_ttl = 3110400;
 
         println!("simulating the tx");
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
