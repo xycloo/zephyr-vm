@@ -18,6 +18,7 @@ use soroban_env_host::xdr::{
     AccountId, Hash, HostFunction, InvokeContractArgs, LedgerEntry, LedgerEntryData, Limits,
     PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr,
 };
+use soroban_simulation::NetworkConfig;
 use tokio::sync::mpsc::UnboundedSender;
 
 //use sha2::{Digest, Sha256};
@@ -872,11 +873,17 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         ledger_info.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
         ledger_info.network_id = host.0.network_id;
         ledger_info.max_entry_ttl = 3110400;
+        let bucket_size: u64 = {
+            let string = std::fs::read_to_string("/tmp/currentbucketsize").unwrap(); // unrecoverable: todo handle this
+            string.parse().unwrap()
+        };
+        let network_config = NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size).unwrap();
+        network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
 
         println!("simulating the tx");
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
             snapshot_source,
-            None,
+            Some(network_config),
             &SimulationAdjustmentConfig::default_adjustment(),
             &ledger_info,
             host_fn,
