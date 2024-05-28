@@ -19,5 +19,5 @@ http = "1.1.0"
 #features=["next", "curr", "serde", "base64"]
 
 [dependencies.soroban-env-host]
-path = "../../rs-soroban-env-conflicts/soroban-env-host"
+path = "../../rs-soroban-env/soroban-env-host"
 features = ["testutils", "next"]

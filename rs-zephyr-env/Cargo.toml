@@ -22,7 +22,7 @@ rusqlite = "0.31.0"
 stellar-strkey = "0.0.8"
 
 [dependencies.soroban-simulation]
-path = "../../rs-soroban-env-conflicts/soroban-simulation"
+path = "../../rs-soroban-env/soroban-simulation"
 
 [dependencies.stellar-xdr]
 version = "=20.1.0"
@@ -31,7 +31,7 @@ rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features=["next", "curr", "serde", "base64"]
 
 [dependencies.soroban-env-host]
-path = "../../rs-soroban-env-conflicts/soroban-env-host"
+path = "../../rs-soroban-env/soroban-env-host"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
