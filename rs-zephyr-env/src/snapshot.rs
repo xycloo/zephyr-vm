@@ -1,13 +1,103 @@
 use std::{env, rc::Rc};
 
 use rusqlite::{params, Connection};
+use snapshot_utils::get_ttl;
 use soroban_env_host::storage::{EntryWithLiveUntil, SnapshotSource};
 use soroban_env_host::xdr::{
     AccountEntry, ContractCodeEntry, LedgerEntry, LedgerEntryExt, LedgerEntryExtensionV1,
     LedgerKey, Limits, PublicKey, ReadXdr, SequenceNumber, Thresholds, WriteXdr,
 };
+use soroban_env_host::HostError;
+use soroban_simulation::SnapshotSourceWithArchive;
 
 pub struct DynamicSnapshot {}
+
+pub(crate) mod snapshot_utils {
+    use sha2::{Digest, Sha256};
+    use rusqlite::{params, Connection};
+    use soroban_env_host::xdr::{Hash, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, WriteXdr};
+
+    pub fn get_current_ledger_sequence() -> i32 {
+        let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
+        let query_string = format!("SELECT ledgerseq FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
+
+        let mut stmt = conn.prepare(&query_string).unwrap();
+        let mut entries = stmt.query(params![]).unwrap();
+
+        let row = entries.next().unwrap();
+
+        if row.is_none() {
+            // TODO: error log
+            println!("unrecoverable: no ledger running");
+            return 0;
+        }
+
+        row.unwrap().get(0).unwrap_or(0)
+    }
+
+    pub fn get_ttl(key: LedgerKey) -> u32 {
+        let mut hasher = Sha256::new();
+        hasher.update(key.to_xdr(Limits::none()).unwrap());
+        let result = { 
+            let hashed = hasher.finalize().as_slice().try_into().unwrap();
+            Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
+        };
+
+        let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
+        let query_string = format!("SELECT ledgerentry FROM ttl WHERE keyhash = ?1");
+
+        let mut stmt = conn.prepare(&query_string).unwrap();
+        let mut entries = stmt.query(params![result]).unwrap();
+
+        let row = entries.next().unwrap();
+
+        if row.is_none() {
+            // TODO: error log
+            println!("no entry ttl found");
+            return 0;
+        }
+
+        let entry = {
+            let string: String = row.unwrap().get(0).unwrap();
+            LedgerEntry::from_xdr_base64(&string, Limits::none()).unwrap()
+        };
+
+        let LedgerEntryData::Ttl(ttl) = entry.data else { return 0 };
+        ttl.live_until_ledger_seq
+    }
+}
+
+impl SnapshotSourceWithArchive for DynamicSnapshot {
+    fn get_including_archived(
+            &self,
+            key: &Rc<LedgerKey>,
+        ) -> std::result::Result<Option<EntryWithLiveUntil>, soroban_env_host::HostError> {
+        let LedgerKey::ConfigSetting(setting) = key.as_ref() else {
+            return Err(HostError::from(soroban_env_host::Error::from_contract_error(0)))
+        };
+
+        let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
+        let query_string = format!("SELECT ledgerentry FROM configsettings WHERE configsettingid = ?1");
+
+        let mut stmt = conn.prepare(&query_string).unwrap();
+        let mut entries = stmt.query(params![setting.config_setting_id as i32]).unwrap();
+
+        let row = entries.next().unwrap();
+
+        if row.is_none() {
+            // TODO: error log
+            println!("no config found: fatal");
+            return Err(HostError::from(soroban_env_host::Error::from_contract_error(0)));
+        }
+
+        let entry = {
+            let string: String = row.unwrap().get(0).unwrap();
+            LedgerEntry::from_xdr_base64(&string, Limits::none()).unwrap()
+        };
+
+        Ok(Some((Rc::new(entry), Some(u32::MAX))))
+    }
+}
 
 impl SnapshotSource for DynamicSnapshot {
     fn get(
@@ -74,7 +164,7 @@ impl SnapshotSource for DynamicSnapshot {
                 let xdr_entry: String = row.get(0).unwrap();
                 let xdr_entry = LedgerEntry::from_xdr_base64(xdr_entry, Limits::none()).unwrap();
 
-                Some((Rc::new(xdr_entry), Some(u32::MAX)))
+                Some((Rc::new(xdr_entry), Some(get_ttl(LedgerKey::ContractCode(key.clone())))))
             }
 
             LedgerKey::ContractData(key) => {
@@ -103,7 +193,7 @@ impl SnapshotSource for DynamicSnapshot {
                 let xdr_entry: String = row.get(0).unwrap();
                 let xdr_entry = LedgerEntry::from_xdr_base64(xdr_entry, Limits::none()).unwrap();
 
-                Some((Rc::new(xdr_entry), Some(u32::MAX)))
+                Some((Rc::new(xdr_entry), Some(get_ttl(LedgerKey::ContractData(key.clone())))))
             }
 
             _ => None,
