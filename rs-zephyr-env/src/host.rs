@@ -177,6 +177,9 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
     pub fn from_id(id: i64, network_id: [u8; 32]) -> Result<Self> {
         let host = soroban_env_host::Host::test_host_with_recording_footprint();
         host.as_budget().reset_unlimited().unwrap();
+        host.with_mut_ledger_info(|li| {
+            li.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
+        });
         host.enable_debug();
 
         let test_contract = Rc::new(ZephyrTestContract {});
