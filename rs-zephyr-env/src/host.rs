@@ -762,9 +762,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
             let val = soroban
                 .with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
-                    Ok(soroban.to_valid_host_val(scval).unwrap())
-                })
-                .unwrap()
+                    soroban.to_valid_host_val(scval)
+                })?
                 .get_payload() as i64;
 
             (soroban, val)
