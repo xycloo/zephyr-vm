@@ -103,6 +103,8 @@ impl ZephyrDatabase for MercuryDatabase {
         _: i64,
         read_point_hash: [u8; 16],
         read_data: &[i64],
+        condition: Option<&[WhereCond]>,
+        condition_args: Option<Vec<Vec<u8>>>,
     ) -> Result<Vec<u8>, DatabaseError> {
         let table_name = format!("zephyr_{}", hex::encode(read_point_hash).as_str());
 

@@ -21,7 +21,8 @@ async fn main() {
             |body: FunctionRequest, store: Arc<JobsManager>| async move {
                 let body_cloned = body.clone();
                 let handle = tokio::spawn(async {
-                    let execution = ExecutionWrapper::new(body_cloned, env::var("NETWORK").unwrap());
+                    let execution =
+                        ExecutionWrapper::new(body_cloned, env::var("NETWORK").unwrap());
                     let resp = execution.catchup_spawn_jobs().await;
 
                     resp

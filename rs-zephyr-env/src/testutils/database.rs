@@ -92,6 +92,8 @@ impl ZephyrDatabase for MercuryDatabase {
         user_id: i64,
         read_point_hash: [u8; 16],
         read_data: &[i64],
+        condition: Option<&[crate::db::database::WhereCond]>,
+        condition_args: Option<Vec<Vec<u8>>>,
     ) -> Result<Vec<u8>, DatabaseError> {
         let rows = TableRows {
             rows: vec![TableRow {

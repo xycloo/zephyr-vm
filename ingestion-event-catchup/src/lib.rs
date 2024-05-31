@@ -200,7 +200,7 @@ impl ExecutionWrapper {
         resp
     }
 
-    pub fn build_transitions_from_events(events_response: query::Response) -> Vec<LedgerCloseMeta> {
+    pub async fn do_catchups_on_events(runtime: Self, events_response: query::Response) {
         let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
 
         for event in events_response.data.eventByContractIds.nodes {
@@ -215,7 +215,7 @@ impl ExecutionWrapper {
             }
         }
 
-        let mut metas = Vec::new();
+        //let mut metas = Vec::new();
         for (ledger, event_set) in all_events_by_ledger.iter() {
             let meta = LedgerCloseMeta::from_xdr_base64(sample_ledger(), Limits::none()).unwrap();
             let mut v1 = if let LedgerCloseMeta::V1(mut v1) = meta {
@@ -305,27 +305,33 @@ impl ExecutionWrapper {
             }
 
             v1.tx_processing = mut_tx_processing.try_into().unwrap();
-            metas.push(LedgerCloseMeta::V1(v1))
-        }
+            let ledger_close_meta = LedgerCloseMeta::V1(v1);
+            let cloned = runtime.clone();
+            let _ = Handle::current().spawn(async move {
+                cloned.reproduce_async_runtime(Some(ledger_close_meta), None).await;
+            });
 
-        metas
+        };
     }
 
     pub async fn catchup_spawn_jobs(&self) -> JoinHandle<String> {
         println!("executing {:?}", self.request);
         match &self.request.mode {
             ExecutionMode::EventCatchup(contract_ids) => {
-                let events = self.retrieve_events(contract_ids.as_slice()).await;
-                let metas = Self::build_transitions_from_events(events);
-
+                let events = self.retrieve_events(contract_ids.as_slice()).await;                
                 let cloned = self.clone();
+
                 let job = Handle::current().spawn(async move {
+                    Self::do_catchups_on_events(cloned, events).await;
+                    "Catchup in progress".into()
+                });
+                /*let job = Handle::current().spawn(async move {
                     for meta in metas {
                         cloned.reproduce_async_runtime(Some(meta), None).await;
                     }
 
                     "Catchup in progress".into()
-                });
+                });*/
 
                 job
             }
@@ -415,7 +421,6 @@ impl ExecutionWrapper {
     }
 }
 
-
 mod newtork_utils {
     use sha2::{Digest, Sha256};
     use soroban_env_host::xdr::Hash;
@@ -462,8 +467,11 @@ impl ExecutionWrapper {
         transition: LedgerCloseMeta,
         binary: Vec<u8>,
     ) -> String {
-        let mut host =
-            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64, self.get_network_id().0).unwrap();
+        let mut host = Host::<MercuryDatabase, LedgerReader>::from_id(
+            self.request.user_id as i64,
+            self.get_network_id().0,
+        )
+        .unwrap();
         host.add_transmitter(sender);
 
         let start = std::time::Instant::now();
@@ -487,8 +495,11 @@ impl ExecutionWrapper {
         binary: Vec<u8>,
         function: InvokeZephyrFunction,
     ) -> String {
-        let mut host =
-            Host::<MercuryDatabase, LedgerReader>::from_id(self.request.user_id as i64, self.get_network_id().0).unwrap();
+        let mut host = Host::<MercuryDatabase, LedgerReader>::from_id(
+            self.request.user_id as i64,
+            self.get_network_id().0,
+        )
+        .unwrap();
         host.add_transmitter(sender);
 
         let start = std::time::Instant::now();

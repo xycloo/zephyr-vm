@@ -454,27 +454,16 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             };
 
             let write_point_hash: [u8; 16] = {
-                let point_raw = stack_impl
-                    .0
-                    .get_with_step()
-                    .ok_or(HostError::NoValOnStack)?;
+                let point_raw = stack_impl.0.get_with_step()?;
                 let point_bytes = byte_utils::i64_to_bytes(point_raw);
                 md5::compute([point_bytes, id].concat()).into()
             };
 
             let columns = {
-                let columns_size_idx = stack_impl
-                    .0
-                    .get_with_step()
-                    .ok_or(HostError::NoValOnStack)?;
+                let columns_size_idx = stack_impl.0.get_with_step()?;
                 let mut columns: Vec<i64> = Vec::new();
                 for _ in 0..columns_size_idx as usize {
-                    columns.push(
-                        stack_impl
-                            .0
-                            .get_with_step()
-                            .ok_or(HostError::NoValOnStack)?,
-                    );
+                    columns.push(stack_impl.0.get_with_step()?);
                 }
                 columns
             };
@@ -482,21 +471,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let data_segments = {
                 let mut segments: Vec<(i64, i64)> = Vec::new();
                 let data_segments_size_idx = {
-                    let non_fixed = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let non_fixed = stack_impl.0.get_with_step()?;
                     (non_fixed * 2) as usize
                 };
                 for _ in (0..data_segments_size_idx).step_by(2) {
-                    let offset = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
-                    let size = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let offset = stack_impl.0.get_with_step()?;
+                    let size = stack_impl.0.get_with_step()?;
                     segments.push((offset, size))
                 }
                 segments
@@ -545,28 +525,17 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             };
 
             let write_point_hash: [u8; 16] = {
-                let point_raw = stack_impl
-                    .0
-                    .get_with_step()
-                    .ok_or(HostError::NoValOnStack)?;
+                let point_raw = stack_impl.0.get_with_step()?;
                 let point_bytes = byte_utils::i64_to_bytes(point_raw);
                 md5::compute([point_bytes, id].concat()).into()
             };
 
             let columns = {
-                let columns_size_idx = stack_impl
-                    .0
-                    .get_with_step()
-                    .ok_or(HostError::NoValOnStack)?;
+                let columns_size_idx = stack_impl.0.get_with_step()?;
                 let mut columns: Vec<i64> = Vec::new();
 
                 for _ in 0..columns_size_idx as usize {
-                    columns.push(
-                        stack_impl
-                            .0
-                            .get_with_step()
-                            .ok_or(HostError::NoValOnStack)?,
-                    );
+                    columns.push(stack_impl.0.get_with_step()?);
                 }
 
                 columns
@@ -576,22 +545,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 let mut segments: Vec<(i64, i64)> = Vec::new();
 
                 let data_segments_size_idx = {
-                    let non_fixed = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let non_fixed = stack_impl.0.get_with_step()?;
                     (non_fixed * 2) as usize
                 };
 
                 for _ in (0..data_segments_size_idx).step_by(2) {
-                    let offset = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
-                    let size = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let offset = stack_impl.0.get_with_step()?;
+                    let size = stack_impl.0.get_with_step()?;
                     segments.push((offset, size))
                 }
                 segments
@@ -601,22 +561,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 let mut conditions = Vec::new();
 
                 let conditions_length = {
-                    let non_fixed = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let non_fixed = stack_impl.0.get_with_step()?;
                     (non_fixed * 2) as usize
                 };
 
                 for _ in (0..conditions_length).step_by(2) {
-                    let column = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
-                    let operator = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let column = stack_impl.0.get_with_step()?;
+                    let operator = stack_impl.0.get_with_step()?;
                     conditions.push(WhereCond::from_column_and_operator(column, operator)?);
                 }
 
@@ -627,22 +578,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 let mut segments = Vec::new();
 
                 let args_length = {
-                    let non_fixed = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let non_fixed = stack_impl.0.get_with_step()?;
                     (non_fixed * 2) as usize
                 };
 
                 for _ in (0..args_length).step_by(2) {
-                    let offset = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
-                    let size = stack_impl
-                        .0
-                        .get_with_step()
-                        .ok_or(HostError::NoValOnStack)?;
+                    let offset = stack_impl.0.get_with_step()?;
+                    let size = stack_impl.0.get_with_step()?;
                     segments.push((offset, size))
                 }
 
@@ -736,7 +678,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             drop(stack);
             stack_obj.0.clear();
 
-            db_impl.db.read_raw(user_id, read_point_hash, &read_data)?
+            db_impl
+                .db
+                .read_raw(user_id, read_point_hash, &read_data, None, None)?
         };
 
         Self::write_to_memory(caller, read.as_slice())
@@ -880,7 +824,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let string = std::fs::read_to_string("/tmp/currentbucketsize").unwrap(); // unrecoverable: todo handle this
             string.parse().unwrap()
         };
-        let network_config = NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size).unwrap();
+        let network_config =
+            NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size).unwrap();
         network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
 
         println!("simulating the tx");

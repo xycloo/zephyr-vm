@@ -2,7 +2,7 @@
 //! that is used in Zephyr for the guest environment
 //! to provide instructions to host environment.
 
-use crate::ZephyrStandard;
+use crate::{error::HostError, ZephyrStandard};
 use anyhow::Result;
 use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 
@@ -52,11 +52,15 @@ impl StackImpl {
 
     /// Reads the current value on stack and increments
     /// the count.
-    pub fn get_with_step(&self) -> Option<i64> {
+    pub fn get_with_step(&self) -> Result<i64, HostError> {
         let current = self.step.clone().into_inner();
         *self.step.borrow_mut() = current + 1;
 
-        self.inner.borrow().get(current).copied()
+        self.inner
+            .borrow()
+            .get(current)
+            .copied()
+            .ok_or(HostError::NoValOnStack)
     }
 
     /// Returns the current count.
