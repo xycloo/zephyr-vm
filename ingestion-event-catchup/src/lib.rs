@@ -306,11 +306,7 @@ impl ExecutionWrapper {
 
             v1.tx_processing = mut_tx_processing.try_into().unwrap();
             let ledger_close_meta = LedgerCloseMeta::V1(v1);
-            let cloned = runtime.clone();
-            let _ = Handle::current().spawn(async move {
-                cloned.reproduce_async_runtime(Some(ledger_close_meta), None).await;
-            });
-
+            runtime.reproduce_async_runtime(Some(ledger_close_meta), None).await;
         };
     }
 
