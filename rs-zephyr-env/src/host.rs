@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
 use soroban_env_host::budget::AsBudget;
 use soroban_env_host::vm::CustomContextVM;
-use soroban_env_host::wasmi as soroban_wasmi;
+use soroban_env_host::{wasmi as soroban_wasmi, VecObject};
 use soroban_env_host::{
     CheckedEnvArg, ContractFunctionSet, Env, LedgerInfo, MapObject, Symbol, TryFromVal, TryIntoVal,
     U32Val, Val, VmCaller, WasmiMarshal,
@@ -1776,6 +1776,87 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let vec_unpack_to_linear_memory_fn_mem = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, vec: i64, vals_pos: i64, len: i64| {
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    host.enable_debug();
+
+                    let mut effects = || {
+                        let mut vm_ctx = CustomVMCtx::new_mut(caller);
+                        let res: Result<_, soroban_env_host::HostError> = host
+                            .vec_unpack_to_linear_memory_mem(
+                                &mut vm_ctx,
+                                VecObject::check_env_arg(
+                                    VecObject::try_marshal_from_relative_value(
+                                        soroban_wasmi::Value::I64(vec),
+                                        &host,
+                                    )
+                                    .unwrap(),
+                                    &host,
+                                )
+                                .unwrap(),
+                                U32Val::check_env_arg(
+                                    U32Val::try_marshal_from_relative_value(
+                                        soroban_wasmi::Value::I64(vals_pos),
+                                        &host,
+                                    )
+                                    .unwrap(),
+                                    &host,
+                                )
+                                .unwrap(),
+                                U32Val::check_env_arg(
+                                    U32Val::try_marshal_from_relative_value(
+                                        soroban_wasmi::Value::I64(len),
+                                        &host,
+                                    )
+                                    .unwrap(),
+                                    &host,
+                                )
+                                .unwrap(),
+                            );
+                        res
+                    };
+
+                    let res = host.with_test_contract_frame(
+                        Hash([0; 32]),
+                        Symbol::from_small_str("test"),
+                        || {
+                            let res = effects();
+                            let res = match res {
+                                Ok(ok) => {
+                                    let ok = ok.check_env_arg(&host).unwrap();
+
+                                    let val: soroban_wasmi::Value =
+                                        ok.marshal_relative_from_self(&host).unwrap();
+
+                                    if let soroban_wasmi::Value::I64(v) = val {
+                                        Ok((v,))
+                                    } else {
+                                        Err(0)
+                                    }
+                                }
+                                Err(hosterr) => {
+                                    panic!("{:?}", hosterr)
+                                }
+                            };
+
+                            Ok(Val::from_payload(res.unwrap().0 as u64))
+                        },
+                    );
+
+                    res.unwrap().get_payload() as i64
+                },
+            );
+
+            FunctionInfo {
+                module: "v",
+                func: "h",
+                wrapped,
+            }
+        };
+
         /*let memobj_copy_from_linear_memory = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, obj: i64, obj_pos: i64,  lm_pos: i64, len: i64| {
                 let vm_ctx = CustomVMCtx::new(&caller);
@@ -1880,6 +1961,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             bytes_new_from_linear_memory_mem,
             symbol_from_linmem,
             map_unpack_to_linear_memory_fn_mem,
+            vec_unpack_to_linear_memory_fn_mem,
             soroban_simulate_tx_fn,
         ];
 
