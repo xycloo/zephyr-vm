@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use tokio::{runtime::Handle, sync::mpsc::UnboundedSender, task::JoinHandle};
+use tokio::{runtime::Handle, sync::mpsc::UnboundedSender, task::{spawn_blocking, JoinHandle}};
 use zephyr::{db::ledger::LedgerStateRead, host::Host, vm::Vm, ZephyrStandard};
 
 use crate::database::MercuryDatabase;
@@ -288,8 +288,11 @@ impl ExecutionWrapper {
     }
 
     async fn recursion_catchups(runtime: Self, events_response: query::Response) {
-        println!("turning program off live ingestion");
-        zephyr_update_status(runtime.request.binary_id as i32, false).await;
+        println!("turning off live ingestion for {}", runtime.request.binary_id as i32);
+        let handle = Handle::current();
+        handle.spawn_blocking(move || async move {
+            zephyr_update_status(runtime.request.binary_id as i32, false).await;
+        }).await.unwrap().await;
         println!("turned off live ingestion");
 
         let latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
