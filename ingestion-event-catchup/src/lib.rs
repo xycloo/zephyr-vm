@@ -162,8 +162,8 @@ impl FunctionRequest {
         }
     }
 
-    pub fn dashboard(binary_id: u32) -> Self {
-        Self { binary_id, user_id: 0, jwt: "".into(), mode: ExecutionMode::Function(InvokeZephyrFunction { fname: "dashboard".into(), arguments: "{}".into() }) }
+    pub fn dashboard(binary_id: u32, user_id: u32) -> Self {
+        Self { binary_id, user_id, jwt: "".into(), mode: ExecutionMode::Function(InvokeZephyrFunction { fname: "dashboard".into(), arguments: "{}".into() }) }
     }
 }
 

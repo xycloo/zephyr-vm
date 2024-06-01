@@ -44,13 +44,13 @@ async fn main() {
             },
         );
 
-    let dashboard = warp::path!("dashboard" / u32)
+    let dashboard = warp::path!("dashboard" / u32 / u32)
         .and(warp::get())
         .and(with_store(manager.clone()))
-        .and_then(|id: u32, _: Arc<JobsManager>| async move {
-            let handle = tokio::spawn(async {
+        .and_then(|id: u32, program: u32, _: Arc<JobsManager>| async move {
+            let handle = tokio::spawn(async move {
                 let execution =
-                    ExecutionWrapper::new(FunctionRequest::dashboard(97), env::var("NETWORK").unwrap());
+                    ExecutionWrapper::new(FunctionRequest::dashboard(program, id), env::var("NETWORK").unwrap());
                 let resp = execution.catchup_spawn_jobs().await;
 
                 resp
