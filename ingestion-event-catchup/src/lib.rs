@@ -161,6 +161,10 @@ impl FunctionRequest {
             false
         }
     }
+
+    pub fn dashboard(binary_id: u32) -> Self {
+        Self { binary_id, user_id: 0, jwt: "".into(), mode: ExecutionMode::Function(InvokeZephyrFunction { fname: "dashboard".into(), arguments: "{}".into() }) }
+    }
 }
 
 #[derive(Clone, Debug)]

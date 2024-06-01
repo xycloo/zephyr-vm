@@ -44,6 +44,27 @@ async fn main() {
             },
         );
 
+    let dashboard = warp::path!("dashboard" / u32)
+        .and(warp::get())
+        .and(with_store(manager.clone()))
+        .and_then(|id: u32, _: Arc<JobsManager>| async move {
+            let handle = tokio::spawn(async move {
+                let execution =
+                    ExecutionWrapper::new(FunctionRequest::dashboard(id), env::var("NETWORK").unwrap());
+                let resp = execution.catchup_spawn_jobs().await;
+
+                resp
+            });
+
+            let resp = handle.await.unwrap();
+            let resp = resp.await.unwrap_or("failed".into());
+
+            Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                resp,
+                warp::http::StatusCode::OK,
+            ))
+        });
+
     let fetch = warp::path!("catchups" / u32)
         .and(warp::get())
         .and(with_store(manager.clone()))
@@ -55,7 +76,7 @@ async fn main() {
             ))
         });
 
-    let routes = warp::post().and(execute).or(fetch);
+    let routes = warp::post().and(execute).or(fetch).or(dashboard);
 
     let warp_server =
         tokio::spawn(async move { warp::serve(routes).run(([0, 0, 0, 0], 8085)).await });
