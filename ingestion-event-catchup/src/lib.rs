@@ -1,4 +1,5 @@
 use ledger::sample_ledger;
+use postgres::NoTls;
 use query::{get_query, get_query_after_ledger, EventNode};
 use reqwest::header::{HeaderMap, HeaderName};
 use rs_zephyr_common::{
@@ -167,6 +168,38 @@ impl FunctionRequest {
     }
 }
 
+pub async fn zephyr_update_status(user: i32, running: bool) {
+    let postgres_args: String = env::var("INGESTOR_DB").unwrap();
+
+    let (client, connection) = tokio_postgres::connect(&postgres_args, NoTls)
+        .await
+        .unwrap();
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    let stmt = client
+        .prepare_typed(
+            "UPDATE public.zephyr_programs SET running = $1 WHERE user_id = $2",
+            &[
+                tokio_postgres::types::Type::BOOL,
+                tokio_postgres::types::Type::INT8,
+            ],
+        )
+        .await
+        .unwrap();
+
+    client
+        .execute(&stmt, &[&running, &(user as i64)])
+        .await
+        .unwrap();
+
+}
+
+
 #[derive(Clone, Debug)]
 pub struct ExecutionWrapper {
     request: FunctionRequest,
@@ -255,15 +288,18 @@ impl ExecutionWrapper {
     }
 
     async fn recursion_catchups(runtime: Self, events_response: query::Response) {
+        println!("turning program off live ingestion");
+        zephyr_update_status(runtime.request.binary_id as i32, false).await;
+        println!("turned off live ingestion");
+
         let latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
         let mut diff = Self::get_current_ledger_sequence().await - latest;
 
         println!("Precision is at {diff}");
-
+        
+        let ExecutionMode::EventCatchup(contract_ids) = &runtime.request.mode else {panic!()};
         while diff > 0 {
-            let ExecutionMode::EventCatchup(contract_ids) = &runtime.request.mode else {panic!()};
-            let new_events = runtime.retrieve_events_after_ledger(contract_ids.as_slice(), latest).await;
-            
+            let new_events = runtime.retrieve_events_after_ledger(contract_ids.as_slice(), latest).await;  
             if new_events.data.eventByContractIds.nodes.len() > 0 {
                 let new = Self::do_catchups_on_events(runtime.clone(), new_events).await;
                 diff = Self::get_current_ledger_sequence().await - new;
@@ -272,6 +308,10 @@ impl ExecutionWrapper {
             }
         }
         
+        println!("turning program on live ingestion");
+        zephyr_update_status(runtime.request.binary_id as i32, true).await;
+        println!("turned on live ingestion");
+
         println!("Catchup completely completed yay ted");
     }
 
