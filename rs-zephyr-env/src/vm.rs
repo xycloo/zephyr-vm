@@ -18,7 +18,7 @@ const MIN_VALUE_STACK_HEIGHT: usize = 1024;
 // Allowing for more stack height than default. Currently shouldn't be
 // required by most programs, but better to keep these configurable on our
 // end
-const MAX_VALUE_STACK_HEIGHT: usize = 20 * 1024 * MIN_VALUE_STACK_HEIGHT;
+const MAX_VALUE_STACK_HEIGHT: usize = 2 * 1024 * MIN_VALUE_STACK_HEIGHT;
 const MAX_RECURSION_DEPTH: usize = 1024 * 10;
 
 /// MemoryManager object. Stored in the VM object.
