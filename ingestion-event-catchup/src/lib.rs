@@ -291,7 +291,7 @@ impl ExecutionWrapper {
         println!("turning off live ingestion for {}", runtime.request.binary_id as i32);
         let handle = Handle::current();
         handle.spawn_blocking(move || async move {
-            zephyr_update_status(runtime.request.binary_id as i32, false).await;
+            zephyr_update_status(runtime.request.user_id as i32, false).await;
         }).await.unwrap().await;
         println!("turned off live ingestion");
 
@@ -312,7 +312,7 @@ impl ExecutionWrapper {
         }
         
         println!("turning program on live ingestion");
-        zephyr_update_status(runtime.request.binary_id as i32, true).await;
+        zephyr_update_status(runtime.request.user_id as i32, true).await;
         println!("turned on live ingestion");
 
         println!("Catchup completely completed yay ted");
