@@ -1,5 +1,5 @@
 use ledger::sample_ledger;
-use query::{get_query, EventNode};
+use query::{get_query, get_query_after_ledger, EventNode};
 use reqwest::header::{HeaderMap, HeaderName};
 use rs_zephyr_common::{
     http::{AgnosticRequest, Method},
@@ -204,7 +204,78 @@ impl ExecutionWrapper {
         resp
     }
 
-    pub async fn do_catchups_on_events(runtime: Self, events_response: query::Response) {
+    pub async fn retrieve_events_after_ledger(&self, contracts_ids: &[String], ledger: i64) -> query::Response {
+        let jwt = &self.request.jwt;
+
+        let client = reqwest::Client::new();
+
+        let graphql_endpoint = if env::var("LOCAL").unwrap() == "true" {
+            "http://localhost:8084/graphql"
+        } else if &self.network == "Public Global Stellar Network ; September 2015" {
+            "https://mainnet.mercurydata.app:2083/graphql"
+        } else {
+            "https://api.mercurydata.app:2083/graphql"
+        };
+
+        let res = client
+            .post(graphql_endpoint)
+            .bearer_auth(jwt)
+            .json(&get_query_after_ledger(contracts_ids, ledger))
+            .send()
+            .await
+            .unwrap();
+
+        let resp: crate::query::Response = res.json().await.unwrap();
+
+        resp
+    }
+
+    async fn get_current_ledger_sequence() -> i64 {
+        let handle = Handle::current();
+        let res = handle.spawn_blocking(move || {
+            let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
+            let query_string =
+                format!("SELECT ledgerseq FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
+
+            let mut stmt = conn.prepare(&query_string).unwrap();
+            let mut entries = stmt.query(params![]).unwrap();
+
+            let row = entries.next().unwrap();
+
+            if row.is_none() {
+                // TODO: error log
+                println!("unrecoverable: no ledger running");
+                return 0;
+            }
+
+            row.unwrap().get(0).unwrap_or(0_i32)
+        }).await.unwrap();
+
+        res.into()
+    }
+
+    async fn recursion_catchups(runtime: Self, events_response: query::Response) {
+        let latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
+        let mut diff = Self::get_current_ledger_sequence().await - latest;
+
+        println!("Precision is at {diff}");
+
+        while diff > 0 {
+            let ExecutionMode::EventCatchup(contract_ids) = &runtime.request.mode else {panic!()};
+            let new_events = runtime.retrieve_events_after_ledger(contract_ids.as_slice(), latest).await;
+            
+            if new_events.data.eventByContractIds.nodes.len() > 0 {
+                let new = Self::do_catchups_on_events(runtime.clone(), new_events).await;
+                diff = Self::get_current_ledger_sequence().await - new;
+            } else {
+                diff = 0
+            }
+        }
+        
+        println!("Catchup completely completed yay ted");
+    }
+
+    pub async fn do_catchups_on_events(runtime: Self, events_response: query::Response) -> i64 {
         let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
 
         for event in events_response.data.eventByContractIds.nodes {
@@ -218,6 +289,8 @@ impl ExecutionWrapper {
                 all_events_by_ledger.insert(seq, vec![event]);
             }
         }
+
+        let mut latest_ledger = 0;
 
         //let mut metas = Vec::new();
         for (ledger, event_set) in all_events_by_ledger.iter() {
@@ -311,7 +384,11 @@ impl ExecutionWrapper {
             v1.tx_processing = mut_tx_processing.try_into().unwrap();
             let ledger_close_meta = LedgerCloseMeta::V1(v1);
             runtime.reproduce_async_runtime(Some(ledger_close_meta), None).await;
+
+            latest_ledger = *ledger
         };
+
+        latest_ledger
     }
 
     pub async fn catchup_spawn_jobs(&self) -> Result<JoinHandle<String>, ()> {
@@ -322,7 +399,8 @@ impl ExecutionWrapper {
                 let cloned = self.clone();
 
                 let job = Handle::current().spawn(async move {
-                    Self::do_catchups_on_events(cloned, events).await;
+                    Self::recursion_catchups(cloned, events).await;
+                    //Self::do_catchups_on_events(cloned, events).await;
                     "Catchup in progress".into()
                 });
                 /*let job = Handle::current().spawn(async move {

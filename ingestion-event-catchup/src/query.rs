@@ -36,6 +36,43 @@ query Test {{
     Request { query }
 }
 
+
+pub fn get_query_after_ledger(contracts: &[String], ledger: i64) -> Request {
+    let mut contracts_string = String::from("[");
+    for (idx, contract) in contracts.iter().enumerate() {
+        if idx == contracts.len() - 1 {
+            contracts_string.push_str(&format!("\"{}\"]", contract))
+        } else {
+            contracts_string.push_str(&format!("\"{}\", ", contract))
+        }
+    }
+
+    let query = format!(
+        "
+query Test {{
+    eventByContractIdAfterLedger(ids: {contracts_string}, ledgerValue: {ledger}) {{
+        nodes {{
+        txInfoByTx {{
+            ledgerByLedger {{
+            closeTime,
+            sequence
+            }}
+        }}
+        contractId,
+        topic1,
+        topic2,
+        topic3,
+        topic4,
+        data
+        }}
+    }}
+}}
+    ",
+    );
+
+    Request { query }
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Vars {
