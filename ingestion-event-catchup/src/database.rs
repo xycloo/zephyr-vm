@@ -18,7 +18,7 @@ pub mod execution {
 
     use postgres::types::Type;
 
-    pub async fn read_binary(id: i64) -> Vec<u8> {
+    pub async fn read_binary(id: i64) -> Result<Vec<u8>, ()> {
         let (client, connection) =
             tokio_postgres::connect(&env::var("INGESTOR_DB").unwrap(), tokio_postgres::NoTls)
                 .await
@@ -39,9 +39,9 @@ pub mod execution {
             .unwrap();
 
         let rows = client.query(&code, &[&id]).await.unwrap();
-        let code: Vec<u8> = rows.get(0).unwrap().get(0);
+        let code: Vec<u8> = rows.get(0).ok_or(())?.get(0);
 
-        code
+        Ok(code)
     }
 }
 

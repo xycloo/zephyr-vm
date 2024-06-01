@@ -314,7 +314,7 @@ impl ExecutionWrapper {
         };
     }
 
-    pub async fn catchup_spawn_jobs(&self) -> JoinHandle<String> {
+    pub async fn catchup_spawn_jobs(&self) -> Result<JoinHandle<String>, ()> {
         println!("executing {:?}", self.request);
         match &self.request.mode {
             ExecutionMode::EventCatchup(contract_ids) => {
@@ -333,7 +333,7 @@ impl ExecutionWrapper {
                     "Catchup in progress".into()
                 });*/
 
-                job
+                Ok(job)
             }
 
             ExecutionMode::Function(function) => {
@@ -346,14 +346,14 @@ impl ExecutionWrapper {
         &self,
         meta: Option<LedgerCloseMeta>,
         function: Option<&InvokeZephyrFunction>,
-    ) -> JoinHandle<String> {
+    ) -> Result<JoinHandle<String>, ()> {
         let handle = tokio::runtime::Handle::current();
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
         let cloned = self.clone();
 
-        let binary = database::execution::read_binary(self.request.binary_id as i64).await;
+        let binary = database::execution::read_binary(self.request.binary_id as i64).await?;
 
         let join_handle = match meta {
             Some(meta) => {
@@ -417,7 +417,7 @@ impl ExecutionWrapper {
         })
         .await;
 
-        join_handle
+        Ok(join_handle)
     }
 }
 

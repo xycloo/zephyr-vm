@@ -29,6 +29,14 @@ async fn main() {
                 });
 
                 let resp = handle.await.unwrap();
+                if resp.is_err() {
+                    return Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                        "No program avalable".into(),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    ))
+                }
+                let resp = resp.unwrap();
+
                 let resp = if body.needs_job() {
                     let job_idx = store.add_job(resp).await;
 
@@ -57,6 +65,14 @@ async fn main() {
             });
 
             let resp = handle.await.unwrap();
+                if resp.is_err() {
+                    return Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                        "No program avalable".into(),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    ))
+                }
+            let resp = resp.unwrap();
+
             let resp = resp.await.unwrap_or("failed".into());
 
             Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
