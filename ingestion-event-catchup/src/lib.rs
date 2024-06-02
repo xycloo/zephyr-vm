@@ -8,6 +8,7 @@ use rs_zephyr_common::{
 };
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use soroban_env_host::xdr::{
     ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1,
     LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta,
@@ -258,7 +259,12 @@ impl ExecutionWrapper {
             .await
             .unwrap();
 
-        let resp: crate::query::Response = res.json().await.unwrap();
+        let resp: crate::query::ResponseAfterLedger = res.json().await.unwrap();
+        let resp = crate::query::Response {
+            data: crate::query::Data {
+                eventByContractIds: resp.data.eventByContractIds
+            }
+        };
 
         resp
     }
@@ -298,10 +304,11 @@ impl ExecutionWrapper {
         let latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
         let mut diff = Self::get_current_ledger_sequence().await - latest;
 
-        println!("Precision is at {diff}");
+        println!("Precision is at {diff}. Latest ledger is {latest}");
         
         let ExecutionMode::EventCatchup(contract_ids) = &runtime.request.mode else {panic!()};
         while diff > 0 {
+            println!("caught diff > 0");
             let new_events = runtime.retrieve_events_after_ledger(contract_ids.as_slice(), latest).await;  
             if new_events.data.eventByContractIds.nodes.len() > 0 {
                 let new = Self::do_catchups_on_events(runtime.clone(), new_events).await;
@@ -642,4 +649,31 @@ impl ExecutionWrapper {
 
         res
     }
+}
+
+#[tokio::test]
+async fn test() {
+    //println!("{}", serde_json::to_string_pretty(&get_query_after_ledger(&["CDVQVKOY2YSXS2IC7KN6MNASSHPAO7UN2UR2ON4OI2SKMFJNVAMDX6DP".into()], 51931046)).unwrap());
+
+    let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoidGRlcDEiLCJleHAiOjE3MTc4NzYyNTEsInVzZXJfaWQiOjcsInVzZXJuYW1lIjoidGRlcEB4eWNsb28uY29tIiwiaWF0IjoxNzE3MjcxNDU0LCJhdWQiOiJwb3N0Z3JhcGhpbGUiLCJpc3MiOiJwb3N0Z3JhcGhpbGUifQ.X056_xJvXV9ZTCnTmEiXq4vNSkZBQtxw-xO72iKJAG4";
+    let client = reqwest::Client::new();
+
+    let graphql_endpoint = "https://mainnet.mercurydata.app:2083/graphql";
+
+    let res = client
+        .post(graphql_endpoint)
+        .bearer_auth(jwt)
+        .json(&get_query_after_ledger(&["CDVQVKOY2YSXS2IC7KN6MNASSHPAO7UN2UR2ON4OI2SKMFJNVAMDX6DP".into()], 51931046))
+        .send()
+        .await
+        .unwrap();
+
+    let resp: crate::query::ResponseAfterLedger = res.json().await.unwrap();
+    let resp = crate::query::Response {
+        data: crate::query::Data {
+            eventByContractIds: resp.data.eventByContractIds
+        }
+    };
+
+    println!("{}", serde_json::to_string(&resp).unwrap())
 }

@@ -50,7 +50,7 @@ pub fn get_query_after_ledger(contracts: &[String], ledger: i64) -> Request {
     let query = format!(
         "
 query Test {{
-    eventByContractIdAfterLedger(ids: {contracts_string}, ledgerValue: {ledger}) {{
+    eventByContractIdsAfterLedger(ids: {contracts_string}, ledgerValue: {ledger}) {{
         nodes {{
         txInfoByTx {{
             ledgerByLedger {{
@@ -119,4 +119,16 @@ pub struct Data {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Response {
     pub data: Data,
+}
+
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DataAfterLedger {
+    #[serde(rename = "eventByContractIdsAfterLedger")]
+    pub eventByContractIds: EventByContractId,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ResponseAfterLedger {
+    pub data: DataAfterLedger,
 }
