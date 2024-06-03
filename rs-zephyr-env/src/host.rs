@@ -637,9 +637,26 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Ok(())
     }
 
-    fn read_database_raw(caller: Caller<Self>) -> Result<(i64, i64)> {
+    
+    // todo: read from other id notice for payment.
+    fn read_database_as_id(caller: Caller<Self>, host_id: i64) -> Result<(i64, i64)> {
         let host = caller.data();
 
+        let read = host.read_database_raw(host_id)?;
+        Self::write_to_memory(caller, read.as_slice())
+    }
+
+    fn read_database_self(caller: Caller<Self>) -> Result<(i64, i64)> {
+        let host = caller.data();
+        let host_id = host.get_host_id();
+
+        let read = host.read_database_raw(host_id)?;
+        Self::write_to_memory(caller, read.as_slice())
+    }
+
+    fn read_database_raw(&self, host_id: i64) -> Result<Vec<u8>> {
+        //let host = caller.data();
+        let host = self;
         let read = {
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
@@ -650,10 +667,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 return Err(DatabaseError::ReadOnWriteOnly.into());
             }
 
-            let id = {
-                let value = host.get_host_id();
-                byte_utils::i64_to_bytes(value)
-            };
+            // let id = {
+                // let value = host.get_host_id();
+                // byte_utils::i64_to_bytes(value)
+            // };
+
+            let id = byte_utils::i64_to_bytes(host_id);
 
             let read_point_hash: [u8; 16] = {
                 let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
@@ -683,7 +702,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 .read_raw(user_id, read_point_hash, &read_data, None, None)?
         };
 
-        Self::write_to_memory(caller, read.as_slice())
+        Ok(read)
     }
 
     fn internal_read_contract_data_entry_by_contract_id_and_key(
@@ -985,7 +1004,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let db_read_fn = {
             let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                let result = Host::read_database_raw(caller);
+                let result = Host::read_database_self(caller);
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res.0, res.1)
                 } else {
@@ -996,6 +1015,23 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             FunctionInfo {
                 module: "env",
                 func: "read_raw",
+                wrapped: db_read_fn_wrapped,
+            }
+        };
+
+        let db_read_as_id_fn = {
+            let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>, id: i64| {
+                let result = Host::read_database_as_id(caller, id);
+                if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_as_id",
                 wrapped: db_read_fn_wrapped,
             }
         };
@@ -1963,6 +1999,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             map_unpack_to_linear_memory_fn_mem,
             vec_unpack_to_linear_memory_fn_mem,
             soroban_simulate_tx_fn,
+
+            db_read_as_id_fn
         ];
 
         soroban_functions.append(&mut arr);
