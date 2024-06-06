@@ -193,7 +193,7 @@ impl ZephyrDatabase for MercuryDatabase {
             return Err(DatabaseError::ZephyrQueryMalformed);
         };
 
-        let query_res = client.query(&stmt, &[]);
+        let query_res = client.query(&stmt, &params);
         let result = if let Ok(res) = query_res {
             let mut rows = Vec::new();
 
