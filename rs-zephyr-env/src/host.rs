@@ -642,7 +642,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     fn read_database_as_id(caller: Caller<Self>, host_id: i64) -> Result<(i64, i64)> {
         let host = caller.data();
 
-        let read = host.read_database_raw(host_id)?;
+        let read = host.read_database_raw(host_id, &caller)?;
         Self::write_to_memory(caller, read.as_slice())
     }
 
@@ -650,18 +650,21 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let host = caller.data();
         let host_id = host.get_host_id();
 
-        let read = host.read_database_raw(host_id)?;
+        let read = host.read_database_raw(host_id, &caller)?;
         Self::write_to_memory(caller, read.as_slice())
     }
 
-    fn read_database_raw(&self, host_id: i64) -> Result<Vec<u8>> {
+    fn read_database_raw(&self, host_id: i64, caller: &Caller<Self>) -> Result<Vec<u8>> {
         //let host = caller.data();
         let host = self;
         let read = {
             let db_obj = host.0.database.borrow();
             let db_impl = db_obj.0.borrow();
-            let stack_obj = host.0.stack.borrow_mut();
-            let stack = stack_obj.0.inner.borrow_mut();
+            
+            let stack_impl = &host.as_stack_mut().0;
+            
+            //let stack_obj = host.0.stack.borrow_mut();
+            //let stack = stack_obj.0.inner.borrow_mut();
 
             if let DatabasePermissions::WriteOnly = db_impl.permissions {
                 return Err(DatabaseError::ReadOnWriteOnly.into());
@@ -675,31 +678,85 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let id = byte_utils::i64_to_bytes(host_id);
 
             let read_point_hash: [u8; 16] = {
-                let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
-                let point_bytes = byte_utils::i64_to_bytes(*point_raw);
+                //let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
+                let point_raw = stack_impl.get_with_step()?;
+                let point_bytes = byte_utils::i64_to_bytes(point_raw);
 
                 md5::compute([point_bytes, id].concat()).into()
             };
 
             let read_data = {
-                let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                //let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
+                let data_size_idx = stack_impl.get_with_step()?;
                 let mut retrn = Vec::new();
 
-                for n in 2..data_size_idx {
-                    retrn.push(*stack.get(n as usize).ok_or(HostError::NoValOnStack)?);
+                for _ in 0..data_size_idx {
+                    retrn.push(stack_impl.get_with_step()?);
                 }
 
                 retrn
             };
 
-            let user_id = host.get_host_id();
+            let conditions = {
+                let mut conditions = Vec::new();
+                
+                let non_fixed = stack_impl.get_with_step();
+                
+                // Note: if there is an extra argument here specifying the conditions length
+                // we assume that it's safe to halt execution if the subsequent stack is malformed
+                if let Ok(non_fixed) = non_fixed {
+                    let conditions_length = (non_fixed * 2) as usize;
 
-            drop(stack);
-            stack_obj.0.clear();
+                    for _ in (0..conditions_length).step_by(2) {
+                        let column = stack_impl.get_with_step()?;
+                        let operator = stack_impl.get_with_step()?;
+                        conditions.push(WhereCond::from_column_and_operator(column, operator)?);
+                    }
+
+                    Some(conditions)
+                } else {
+                    None
+                }
+            };
+
+            let has_conditions = conditions.is_some();
+
+            let conditions_args = if has_conditions {
+                let mut segments = Vec::new();
+
+                let args_length = {
+                    let non_fixed = stack_impl.get_with_step()?;
+                    (non_fixed * 2) as usize
+                };
+
+                for _ in (0..args_length).step_by(2) {
+                    let offset = stack_impl.get_with_step()?;
+                    let size = stack_impl.get_with_step()?;
+                    segments.push((offset, size))
+                }
+
+                Some(segments)
+            } else {
+                None
+            };
+
+            let aggregated_conditions_args = if has_conditions {
+                let memory = Self::get_memory(caller);
+                Some(conditions_args.unwrap()
+                    .iter()
+                    .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
+                    .collect::<Result<Vec<_>, _>>()?)
+            } else {
+                None
+            };
+
+
+            let user_id = host.get_host_id();
+            stack_impl.clear();
 
             db_impl
                 .db
-                .read_raw(user_id, read_point_hash, &read_data, None, None)?
+                .read_raw(user_id, read_point_hash, &read_data, conditions.as_ref().map(Vec::as_slice), aggregated_conditions_args)?
         };
 
         Ok(read)

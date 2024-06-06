@@ -142,10 +142,52 @@ impl ZephyrDatabase for MercuryDatabase {
             }
         }
 
-        let query = format!("SELECT {} FROM {}", columns_string, table_name);
+/*         let query = format!("SELECT {} FROM {}", columns_string, table_name);
         println!("query is {query}");
         println!("{:?}", client.prepare_typed(&query, &[]).err());
         let stmt = if let Ok(stmt) = client.prepare_typed(&query, &[]) {
+            stmt
+        } else {
+            return Err(DatabaseError::ZephyrQueryMalformed);
+        };*/
+
+        let mut query = format!("SELECT {} FROM {}", columns_string, table_name);
+        
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
+        let mut types = Vec::new();
+        if let Some(condition) = condition { 
+            query.push_str(" WHERE ");
+
+            for idx in 0..condition.len() {
+                match condition[idx] {
+                    WhereCond::ColEq(column) => {
+                        let colname = if let Ok(string) = symbol::Symbol(column as u64).to_string() {
+                            string
+                        } else {
+                            return Err(DatabaseError::WriteError);
+                        };
+
+                        if idx != condition.len() - 1 {
+                            query.push_str(&format!(
+                                "{} = ${} AND ",
+                                colname,
+                                idx + 1
+                            ));
+                        } else {
+                            query.push_str(&format!("{} = ${}", colname, idx + 1));
+                        }
+                    }
+                }
+                params.push(&condition_args.as_ref().unwrap()[idx])
+            }
+
+            for _ in 0..params.len() {
+                types.push(Type::BYTEA)
+            }    
+        }
+        
+        println!("query is {}", query);
+        let stmt = if let Ok(stmt) = client.prepare_typed(&query, &types) {
             stmt
         } else {
             return Err(DatabaseError::ZephyrQueryMalformed);
