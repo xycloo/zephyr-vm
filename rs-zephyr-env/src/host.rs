@@ -697,11 +697,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 retrn
             };
 
+            println!("getting conditions");
             let conditions = {
                 let mut conditions = Vec::new();
                 
                 let non_fixed = stack_impl.get_with_step();
-                
+                println!("found {:?} conditions", non_fixed);
+
                 // Note: if there is an extra argument here specifying the conditions length
                 // we assume that it's safe to halt execution if the subsequent stack is malformed
                 if let Ok(non_fixed) = non_fixed {
@@ -719,6 +721,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 }
             };
 
+            println!("query does have conditions");
             let has_conditions = conditions.is_some();
 
             let conditions_args = if has_conditions {
@@ -740,6 +743,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 None
             };
 
+            println!("About to aggregate condition args");
+
             let aggregated_conditions_args = if has_conditions {
                 let memory = Self::get_memory(caller);
                 Some(conditions_args.unwrap()
@@ -749,6 +754,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             } else {
                 None
             };
+
+            println!("aggregated condition args");
 
 
             let user_id = host.get_host_id();
