@@ -10,10 +10,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use soroban_env_host::xdr::{
-    ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1,
-    LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta,
-    ReadXdr, ScAddress, ScVal, SorobanTransactionMeta, TransactionMetaV3, TransactionResult,
-    TransactionResultMeta, TransactionResultPair, TransactionResultResult, WriteXdr,
+    ContractEvent, ContractEventV0, Hash, LedgerCloseMeta, LedgerCloseMetaExt, LedgerCloseMetaV1, LedgerEntry, LedgerEntryChanges, LedgerHeader, LedgerHeaderHistoryEntry, Limits, OperationMeta, ReadXdr, ScAddress, ScVal, SorobanTransactionMeta, TimePoint, TransactionMetaV3, TransactionResult, TransactionResultMeta, TransactionResultPair, TransactionResultResult, WriteXdr
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -326,27 +323,30 @@ impl ExecutionWrapper {
     }
 
     pub async fn do_catchups_on_events(runtime: Self, events_response: query::Response) -> i64 {
-        let mut all_events_by_ledger: BTreeMap<i64, Vec<EventNode>> = BTreeMap::new();
+        let mut all_events_by_ledger: BTreeMap<i64, (i64, Vec<EventNode>)> = BTreeMap::new();
 
         for event in events_response.data.eventByContractIds.nodes {
             let seq = event.txInfoByTx.ledgerByLedger.sequence;
+            let time = event.txInfoByTx.ledgerByLedger.closeTime;
+            
             if all_events_by_ledger.contains_key(&seq) {
                 let mut other_events: Vec<EventNode> =
-                    all_events_by_ledger.get(&seq).unwrap().to_vec();
+                    all_events_by_ledger.get(&seq).unwrap().1.to_vec();
                 other_events.push(event);
-                all_events_by_ledger.insert(seq, other_events);
+                all_events_by_ledger.insert(seq, (time, other_events));
             } else {
-                all_events_by_ledger.insert(seq, vec![event]);
+                all_events_by_ledger.insert(seq, (time, vec![event]));
             }
         }
 
         let mut latest_ledger = 0;
 
         //let mut metas = Vec::new();
-        for (ledger, event_set) in all_events_by_ledger.iter() {
+        for (ledger, (time, event_set)) in all_events_by_ledger.iter() {
             let meta = LedgerCloseMeta::from_xdr_base64(sample_ledger(), Limits::none()).unwrap();
             let mut v1 = if let LedgerCloseMeta::V1(mut v1) = meta {
                 v1.ledger_header.header.ledger_seq = *ledger as u32;
+                v1.ledger_header.header.scp_value.close_time = TimePoint(*time as u64);
                 v1
             } else {
                 panic!()
