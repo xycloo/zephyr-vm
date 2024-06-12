@@ -35,7 +35,7 @@ pub(crate) mod snapshot_utils {
             return (0, 0);
         }
 
-        (row.unwrap().get(0).unwrap_or(0), row.unwrap().get(0).unwrap_or(0))
+        (row.unwrap().get(0).unwrap_or(0), row.unwrap().get(1).unwrap_or(0))
     }
 
     pub fn get_ttl(key: LedgerKey) -> u32 {
