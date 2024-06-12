@@ -298,7 +298,7 @@ impl ExecutionWrapper {
         }).await.unwrap().await;
         println!("turned off live ingestion");
 
-        let latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
+        let mut latest = Self::do_catchups_on_events(runtime.clone(), events_response).await;
         let mut diff = Self::get_current_ledger_sequence().await - latest;
 
         println!("Precision is at {diff}. Latest ledger is {latest}");
@@ -308,8 +308,8 @@ impl ExecutionWrapper {
             println!("caught diff > 0");
             let new_events = runtime.retrieve_events_after_ledger(contract_ids.as_slice(), latest).await;  
             if new_events.data.eventByContractIds.nodes.len() > 0 {
-                let new = Self::do_catchups_on_events(runtime.clone(), new_events).await;
-                diff = Self::get_current_ledger_sequence().await - new;
+                latest = Self::do_catchups_on_events(runtime.clone(), new_events).await;
+                diff = Self::get_current_ledger_sequence().await - latest;
             } else {
                 diff = 0
             }
