@@ -178,7 +178,9 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
         let host = soroban_env_host::Host::test_host_with_recording_footprint();
         host.as_budget().reset_unlimited().unwrap();
         host.with_mut_ledger_info(|li| {
-            li.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
+            let (sequence, timestamp) = snapshot_utils::get_current_ledger_sequence();
+            li.sequence_number = sequence as u32;
+            li.timestamp = timestamp as u64;
         });
         host.enable_debug();
 
@@ -899,7 +901,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
         let mut ledger_info = LedgerInfo::default();
         ledger_info.protocol_version = 21;
-        ledger_info.sequence_number = snapshot_utils::get_current_ledger_sequence() as u32;
+        let ledger_from_state = snapshot_utils::get_current_ledger_sequence();
+        ledger_info.sequence_number = ledger_from_state.0 as u32;
+        ledger_info.timestamp = ledger_from_state.1 as u64;
         ledger_info.network_id = host.0.network_id;
         ledger_info.max_entry_ttl = 3110400;
         let bucket_size: u64 = {

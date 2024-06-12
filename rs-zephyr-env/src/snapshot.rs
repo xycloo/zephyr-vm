@@ -19,10 +19,10 @@ pub(crate) mod snapshot_utils {
         Hash, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, WriteXdr,
     };
 
-    pub fn get_current_ledger_sequence() -> i32 {
+    pub fn get_current_ledger_sequence() -> (i32, i64) {
         let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
         let query_string =
-            format!("SELECT ledgerseq FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
+            format!("SELECT ledgerseq, closetime FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
 
         let mut stmt = conn.prepare(&query_string).unwrap();
         let mut entries = stmt.query(params![]).unwrap();
@@ -32,10 +32,10 @@ pub(crate) mod snapshot_utils {
         if row.is_none() {
             // TODO: error log
             println!("unrecoverable: no ledger running");
-            return 0;
+            return (0, 0);
         }
 
-        row.unwrap().get(0).unwrap_or(0)
+        (row.unwrap().get(0).unwrap_or(0), row.unwrap().get(0).unwrap_or(0))
     }
 
     pub fn get_ttl(key: LedgerKey) -> u32 {
