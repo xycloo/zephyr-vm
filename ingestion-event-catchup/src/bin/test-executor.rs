@@ -48,7 +48,8 @@ async fn main() {
                     if let ExecutionMode::Function(InvokeZephyrFunction {fname, ..}) = body.mode {
                         if fname == "dashboard" {
                             let cache = CacheClient::new();
-                            let _ = cache.insert_or_update(body.binary_id, &response);
+                            let res = cache.insert_or_update(body.binary_id, &response);
+                            println!("Inserting {:?}", res);
                         }
                     }
                     
