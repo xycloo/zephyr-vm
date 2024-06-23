@@ -93,8 +93,8 @@ async fn main() {
                     response,
                     warp::http::StatusCode::OK,
                 )),
-                Err(_) => Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
-                    "Error in retrieving the dashboard".into(),
+                Err(error) => Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                    format!("Error in retrieving the dashboard {:?}", error),
                     warp::http::StatusCode::BAD_REQUEST,
                 )) 
             }
