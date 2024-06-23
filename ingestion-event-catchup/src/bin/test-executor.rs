@@ -1,6 +1,7 @@
 use std::{env, sync::Arc, time::Duration};
 
-use ingestion_event_catchup::{jobs_manager::JobsManager, ExecutionWrapper, FunctionRequest};
+use ingestion_event_catchup::{caching::CacheClient, jobs_manager::JobsManager, ExecutionMode, ExecutionWrapper, FunctionRequest, InvokeZephyrFunction};
+use serde_json::json;
 use warp::{reject::Rejection, reply::WithStatus, Filter};
 
 fn with_store(
@@ -42,7 +43,16 @@ async fn main() {
 
                     format!("catchup {} in progress", job_idx)
                 } else {
-                    resp.await.unwrap_or("failed".into())
+                    let response = resp.await.unwrap_or(json!({"error": "code execution trapped."}).to_string());
+
+                    if let ExecutionMode::Function(InvokeZephyrFunction {fname, ..}) = body.mode {
+                        if fname == "dashboard" {
+                            let cache = CacheClient::new();
+                            let _ = cache.insert_or_update(body.binary_id, &response);
+                        }
+                    }
+                    
+                    response
                 };
 
                 Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
@@ -52,11 +62,11 @@ async fn main() {
             },
         );
 
-    let dashboard = warp::path!("dashboard" / u32 / u32)
+    let dashboard = warp::path!("dashboard" / u32)
         .and(warp::get())
         .and(with_store(manager.clone()))
-        .and_then(|id: u32, program: u32, _: Arc<JobsManager>| async move {
-            let handle = tokio::spawn(async move {
+        .and_then(|program: u32, _: Arc<JobsManager>| async move {
+            /*let handle = tokio::spawn(async move {
                 let execution =
                     ExecutionWrapper::new(FunctionRequest::dashboard(program, id), env::var("NETWORK").unwrap());
                 let resp = execution.catchup_spawn_jobs().await;
@@ -73,12 +83,21 @@ async fn main() {
                 }
             let resp = resp.unwrap();
 
-            let resp = resp.await.unwrap_or("failed".into());
+            let resp = resp.await.unwrap_or("failed".into());*/
+                
+            let cache = CacheClient::new();
+            let result = cache.get_cahched(program);
 
-            Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
-                resp,
-                warp::http::StatusCode::OK,
-            ))
+            match result {
+                Ok(response) => Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                    response,
+                    warp::http::StatusCode::OK,
+                )),
+                Err(_) => Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
+                    "Error in retrieving the dashboard".into(),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )) 
+            }
         });
 
     let fetch = warp::path!("catchups" / u32)

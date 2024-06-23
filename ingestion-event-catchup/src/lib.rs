@@ -28,6 +28,7 @@ mod database;
 pub mod jobs_manager;
 mod ledger;
 mod query;
+pub mod caching;
 
 #[derive(Clone)]
 pub struct LedgerReader {
@@ -132,7 +133,7 @@ impl LedgerStateRead for LedgerReader {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InvokeZephyrFunction {
-    fname: String,
+    pub fname: String,
     arguments: String,
 }
 
@@ -146,7 +147,7 @@ pub enum ExecutionMode {
 /// This is unsafe to extern.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FunctionRequest {
-    binary_id: u32,
+    pub binary_id: u32,
     user_id: u32,
     jwt: String,
     pub mode: ExecutionMode,
