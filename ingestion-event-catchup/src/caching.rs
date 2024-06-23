@@ -36,9 +36,13 @@ impl CacheClient {
     pub fn insert_or_update(&self, id: u32, content: &str) -> Result<()> {
         let connection = Persy::open(&self.storage, Config::new())?;
         let mut persy_id = None;
-        for (id, _) in connection.scan(id.to_string())? {
-            persy_id = Some(id);
-        };
+        
+        let scanned = connection.scan(id.to_string());
+        if let Ok(scanned) = scanned {
+            for (id, _) in scanned {
+                persy_id = Some(id);
+            };
+        }
 
         if let Some(persy_id) = persy_id {
             let mut tx = connection.begin()?;
