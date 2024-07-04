@@ -2,18 +2,12 @@
 resolver = "2"
 members = [
     "rs-zephyr-env", 
-    "rs-zephyr-sdk",
     "rs-zephyr-common",
-    "examples/simple",
-    "examples/read-simple",
-    "examples/update-simple",
-    "examples/functions/instance-read",
-    "examples/functions/entries-filter",
-    "zephyr-cli",
-    "function-execution",
-    "ingestion-event-catchup",
-    "macros"
-]
+    "inner-serverless-handler",
+    "macros", 
+    "wasm-tests/db-write-read", 
+    "wasm-tests/db-write-update-read"
+, "wasm-tests/soroban-host"]
 
 
 [profile.release]
