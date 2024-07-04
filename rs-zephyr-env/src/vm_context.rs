@@ -3,7 +3,7 @@
 //! writing the guest memory.
 
 use anyhow::Result;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},

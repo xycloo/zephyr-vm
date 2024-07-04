@@ -2,10 +2,8 @@
 //!
 
 use anyhow::{anyhow, Result};
-use rs_zephyr_common::ContractDataEntry;
 use std::{cell::RefCell, rc::Rc};
-use stellar_xdr::next::{LedgerEntry, VecM};
-use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store, Value};
+use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store};
 
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},

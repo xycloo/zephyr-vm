@@ -3,4 +3,3 @@
 
 pub mod database;
 pub mod ledger;
-pub mod shield;

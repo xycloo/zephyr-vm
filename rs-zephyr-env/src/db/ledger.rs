@@ -4,12 +4,9 @@
 //! implementation agnostic, as we're always talking about the Stellar
 //! ledger.
 
-use std::{cell::RefCell, rc::Rc};
-
 use anyhow::Result;
 use rs_zephyr_common::ContractDataEntry;
-use serde::{Deserialize, Serialize};
-use soroban_env_host::xdr::{ContractDataDurability, LedgerEntry, ScAddress, ScVal};
+use soroban_env_host::xdr::{ScAddress, ScVal};
 
 use crate::{ZephyrMock, ZephyrStandard};
 
@@ -38,13 +35,14 @@ pub trait LedgerStateRead {
     ) -> Vec<ContractDataEntry>;
 }
 
+/// Empty implementation for the host's ledger reader adapter.
 #[derive(Clone)]
 pub struct LedgerImpl<L: LedgerStateRead> {
     /// Implementor's ledger.
     pub ledger: Box<L>,
 }
 
-/// Wrapper of the database implementation.
+/// Wrapper of the ledger implementation.
 #[derive(Clone)]
 pub struct Ledger<L: LedgerStateRead>(pub(crate) LedgerImpl<L>);
 

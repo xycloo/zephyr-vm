@@ -5,23 +5,71 @@ use crate::{
     host::{FunctionInfo, Host, SorobanTempFunctionInfo},
 };
 use soroban_env_host::wasmi::{
+    self as soroban_wasmi,
     core::{Trap, TrapCode::BadSignature},
     Value,
 };
 use soroban_env_host::{
     AddressObject, Bool, BytesObject, DurationObject, Error, HostError, I128Object, I256Object,
     I256Val, I64Object, MapObject, StorageType, StringObject, Symbol, SymbolObject,
-    TimepointObject, TryFromVal, U128Object, U256Object, U256Val, U32Val, U64Object, U64Val, Val,
-    VecObject, VmCaller, Void, WasmiMarshal,
+    TimepointObject, U128Object, U256Object, U256Val, U32Val, U64Object, U64Val, Val, VecObject,
+    VmCaller, Void, WasmiMarshal,
 };
 use soroban_env_macros::generate_call_macro_with_all_host_functions;
 
 use soroban_env_host::{
-    xdr::{ContractCostType, Hash, ScErrorCode, ScErrorType},
-    CheckedEnvArg, EnvBase, Host as SorobanHost, VmCallerEnv,
+    xdr::{Hash, ScErrorCode, ScErrorType},
+    CheckedEnvArg, Host as SorobanHost, VmCallerEnv,
 };
 
 use wasmi::{Func, Store};
+
+pub(crate) fn build_u32val(host: &soroban_env_host::Host, int: i64) -> Result<U32Val, HostError> {
+    U32Val::check_env_arg(
+        U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(int), &host).map_err(
+            |_| {
+                Error::from_scerror(soroban_env_host::xdr::ScError::WasmVm(
+                    ScErrorCode::InvalidInput,
+                ))
+            },
+        )?,
+        host,
+    )
+}
+
+pub(crate) fn with_frame<G>(
+    host: soroban_env_host::Host,
+    result: Result<G, HostError>,
+) -> Result<Val, HostError>
+where
+    G: RelativeObjectConversion + CheckedEnvArg,
+{
+    host.with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
+        let res = match result {
+            Ok(ok) => {
+                let ok = ok.check_env_arg(&host)?;
+
+                let val: soroban_wasmi::Value =
+                    ok.marshal_relative_from_self(&host).map_err(|_| {
+                        Error::from_scerror(soroban_env_host::xdr::ScError::WasmVm(
+                            ScErrorCode::InvalidInput,
+                        ))
+                    })?;
+
+                if let soroban_wasmi::Value::I64(v) = val {
+                    Ok((v,))
+                } else {
+                    Err(0)
+                }
+            }
+            Err(hosterr) => return Err(hosterr),
+        };
+
+        Ok(Val::from_payload(
+            res.map_err(|_| Error::from_contract_error(0))?.0 as u64,
+        ))
+    })
+}
 
 pub(crate) trait RelativeObjectConversion: WasmiMarshal + Clone {
     fn absolute_to_relative(self, _host: &SorobanHost) -> Result<Self, HostError> {
@@ -211,7 +259,8 @@ macro_rules! generate_dispatch_functions {
 
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
                     host.enable_debug();
-                    let effects = || {
+
+                    let effects = || -> Result<_, HostError> {
                         // This is an additional protocol version guardrail that
                         // should not be necessary. Any wasm contract containing a
                         // call to an out-of-protocol-range host function should
@@ -242,7 +291,7 @@ macro_rules! generate_dispatch_functions {
                         // host budget, marshalling values. This does not account for the actual work
                         // being done in those functions, which are metered individually by the implementation.
                         //host.charge_budget(ContractCostType::DispatchHostFunction, None)?;
-                        let mut vmcaller = VmCaller::none();
+
                         // The odd / seemingly-redundant use of `soroban_env_host::wasmi::Value` here
                         // as intermediates -- rather than just passing Vals --
                         // has to do with the fact that some host functions are
@@ -252,32 +301,21 @@ macro_rules! generate_dispatch_functions {
                         // happens to be a natural switching point for that: we have
                         // conversions to and from both Val and i64 / u64 for
                         // soroban_env_host::wasmi::Value.
-                        let res: Result<_, HostError> = host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).unwrap(), &host).unwrap()),*);
-                        res
+
+                        let mut vmcaller = VmCaller::none();
+
+                        host.$fn_id(&mut vmcaller, $(<$type>::check_env_arg(<$type>::try_marshal_from_relative_value(Value::I64($arg), &host).map_err(|_| Error::from_contract_error(0))?, &host)?),*)
                     };
 
 
                     (host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
                         let res = effects();
-                        /*if host.tracing_enabled()
-                        {
-                            let dyn_res: Result<&dyn core::fmt::Debug,&HostError> = match &res {
-                                Ok(ref ok) => Ok(ok),
-                                Err(err) => Err(err)
-                            };
-                            host.trace_env_ret(&core::stringify!($fn_id), &dyn_res)?;
-                        }*/
-
-                        // On the off chance we got an error with no context, we can
-                        // at least attach some here "at each host function call",
-                        // fairly systematically. This will cause the context to
-                        // propagate back through wasmi to its caller.
-                        /*let res = host.augment_err_result(res);
 
                         let res = match res {
                             Ok(ok) => {
-                                let ok = ok.check_env_arg(&host).unwrap();
-                                let val: Value = ok.marshal_relative_from_self(&host).unwrap();
+                                let ok = ok.check_env_arg(&host)?;
+
+                                let val: Value = ok.marshal_relative_from_self(&host).map_err(|_| Error::from_contract_error(0))?;
                                 if let Value::I64(v) = val {
                                     Ok((v,))
                                 } else {
@@ -295,35 +333,7 @@ macro_rules! generate_dispatch_functions {
                             }
                         };
 
-                        // This is where the Host->VM boundary is crossed.
-                        // We supply the remaining host budget as fuel to the VM.
-                        //let caller = vmcaller.try_mut().map_err(|e| Trap::from(HostError::from(e))).unwrap();
-                        //FuelRefillable::add_fuel_to_vm(caller, &host).map_err(|he| Trap::from(he))?;
-
-                        Ok(res.unwrap())*/
-                        let res = match res {
-                            Ok(ok) => {
-                                let ok = ok.check_env_arg(&host).unwrap();
-
-                                let val: Value = ok.marshal_relative_from_self(&host).unwrap();
-                                if let Value::I64(v) = val {
-                                    Ok((v,))
-                                } else {
-                                    Err(BadSignature.into())
-                                }
-                            },
-                            Err(hosterr) => {
-                                // We make a new HostError here to capture the escalation event itself.
-                                let escalation: HostError =
-                                    host.error(hosterr.into(),
-                                            concat!("escalating error to VM trap from failed host function call: ",
-                                                    stringify!($fn_id)), &[]);
-                                let trap: Trap = escalation.into();
-                                Err(trap)
-                            }
-                        };
-
-                        Ok(Val::from_payload(res.unwrap().0 as u64))
+                        Ok(Val::from_payload(res.unwrap_or((0, )).0 as u64))
 
                 }).unwrap().get_payload() as i64, )
                 }

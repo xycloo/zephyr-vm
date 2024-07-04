@@ -4,8 +4,8 @@ use rusqlite::{params, Connection};
 use snapshot_utils::get_ttl;
 use soroban_env_host::storage::{EntryWithLiveUntil, SnapshotSource};
 use soroban_env_host::xdr::{
-    AccountEntry, ContractCodeEntry, LedgerEntry, LedgerEntryExt, LedgerEntryExtensionV1,
-    LedgerKey, Limits, PublicKey, ReadXdr, SequenceNumber, Thresholds, WriteXdr,
+    AccountEntry, LedgerEntry, LedgerEntryExt, LedgerKey, Limits, PublicKey, ReadXdr,
+    SequenceNumber, Thresholds, WriteXdr,
 };
 use soroban_env_host::HostError;
 use soroban_simulation::SnapshotSourceWithArchive;
@@ -21,8 +21,9 @@ pub(crate) mod snapshot_utils {
 
     pub fn get_current_ledger_sequence() -> (i32, i64) {
         let conn = Connection::open("/tmp/rs_ingestion_temp/stellar.db").unwrap();
-        let query_string =
-            format!("SELECT ledgerseq, closetime FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1");
+        let query_string = format!(
+            "SELECT ledgerseq, closetime FROM ledgerheaders ORDER BY ledgerseq DESC LIMIT 1"
+        );
 
         let mut stmt = conn.prepare(&query_string).unwrap();
         let mut entries = stmt.query(params![]).unwrap();
@@ -30,12 +31,14 @@ pub(crate) mod snapshot_utils {
         let row = entries.next().unwrap();
 
         if row.is_none() {
-            // TODO: error log
-            println!("unrecoverable: no ledger running");
+            // Unrecoverable: no ledger is running
             return (0, 0);
         }
 
-        (row.unwrap().get(0).unwrap_or(0), row.unwrap().get(1).unwrap_or(0))
+        (
+            row.unwrap().get(0).unwrap_or(0),
+            row.unwrap().get(1).unwrap_or(0),
+        )
     }
 
     pub fn get_ttl(key: LedgerKey) -> u32 {
@@ -56,7 +59,6 @@ pub(crate) mod snapshot_utils {
 
         if row.is_none() {
             // TODO: error log
-            println!("no entry ttl found");
             return 0;
         }
 
@@ -96,7 +98,6 @@ impl SnapshotSourceWithArchive for DynamicSnapshot {
 
         if row.is_none() {
             // TODO: error log
-            println!("no config found: fatal");
             return Err(HostError::from(
                 soroban_env_host::Error::from_contract_error(0),
             ));
@@ -117,7 +118,6 @@ impl SnapshotSource for DynamicSnapshot {
         key: &std::rc::Rc<soroban_env_host::xdr::LedgerKey>,
     ) -> Result<Option<soroban_env_host::storage::EntryWithLiveUntil>, soroban_env_host::HostError>
     {
-        println!("requested {:?}", key);
         let entry: Option<EntryWithLiveUntil> = match key.as_ref() {
             LedgerKey::Account(key) => {
                 let PublicKey::PublicKeyTypeEd25519(ed25519) = key.account_id.0.clone();

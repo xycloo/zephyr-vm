@@ -23,9 +23,11 @@ pub mod vm_context;
 
 use anyhow::Result;
 
-/// This only for testing
-#[cfg(feature = "testutils")]
+#[cfg(test)]
 pub mod testutils;
+
+#[cfg(test)]
+pub mod test;
 
 /// Standard object for Zephyr. This trait must be implemented for all
 /// components that are encompassed by the Zephyr VM, specifically

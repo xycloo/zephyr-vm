@@ -3,43 +3,13 @@
 //! between the binary code executed within the VM and
 //! the implementor.
 
-use anyhow::{anyhow, Result};
-use rs_zephyr_common::{to_fixed, wrapping::WrappedMaxBytes, DatabaseError, ZephyrStatus};
-use soroban_env_host::budget::AsBudget;
-use soroban_env_host::vm::CustomContextVM;
-use soroban_env_host::{wasmi as soroban_wasmi, VecObject};
-use soroban_env_host::{
-    CheckedEnvArg, ContractFunctionSet, Env, LedgerInfo, MapObject, Symbol, TryFromVal, TryIntoVal,
-    U32Val, Val, VmCaller, WasmiMarshal,
-};
-use soroban_simulation::simulation::SimulationAdjustmentConfig;
-//use soroban_sdk::{IntoVal, Symbol, Val};
-use soroban_env_host::xdr::{
-    AccountId, Hash, HostFunction, InvokeContractArgs, LedgerEntry, LedgerEntryData, Limits,
-    PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr,
-};
-use soroban_simulation::NetworkConfig;
-use tokio::sync::mpsc::UnboundedSender;
-
-//use sha2::{Digest, Sha256};
-use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Ref, RefCell, RefMut},
-    num::Wrapping,
-    rc::{Rc, Weak},
-    sync::mpsc::Sender,
-};
-use wasmi::{core::Pages, Caller, Func, Memory, Store, Value};
-
-use crate::snapshot::{snapshot_utils, DynamicSnapshot};
-use crate::soroban_host_gen::{self, RelativeObjectConversion};
-use crate::vm::MemoryManager;
+use crate::snapshot::snapshot_utils;
+use crate::soroban_host_gen::{self, build_u32val, with_frame, RelativeObjectConversion};
 use crate::{
     budget::Budget,
     db::{
-        database::{Database, DatabasePermissions, WhereCond, ZephyrDatabase},
+        database::{Database, ZephyrDatabase},
         ledger::{Ledger, LedgerStateRead},
-        shield::ShieldedStore,
     },
     error::HostError,
     stack::Stack,
@@ -47,29 +17,26 @@ use crate::{
     vm_context::VmContext,
     ZephyrMock, ZephyrStandard,
 };
+use anyhow::Result;
+use memory::CustomVMCtx;
+use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
+use soroban_env_host::budget::AsBudget;
+use soroban_env_host::xdr::{Hash, Limits, ReadXdr, ScAddress, ScVal};
+use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, VecObject};
+use soroban_env_host::{CheckedEnvArg, MapObject, Symbol, Val};
+use std::{
+    borrow::BorrowMut,
+    cell::{Ref, RefCell, RefMut},
+    rc::{Rc, Weak},
+};
+use tokio::sync::mpsc::UnboundedSender;
+use utils::soroban::ZephyrTestContract;
+use wasmi::{Caller, Func, Store, Value};
 
-mod byte_utils {
-    pub fn i64_to_bytes(value: i64) -> [u8; 8] {
-        let byte0 = ((value >> 0) & 0xFF) as u8;
-        let byte1 = ((value >> 8) & 0xFF) as u8;
-        let byte2 = ((value >> 16) & 0xFF) as u8;
-        let byte3 = ((value >> 24) & 0xFF) as u8;
-        let byte4 = ((value >> 32) & 0xFF) as u8;
-        let byte5 = ((value >> 40) & 0xFF) as u8;
-        let byte6 = ((value >> 48) & 0xFF) as u8;
-        let byte7 = ((value >> 56) & 0xFF) as u8;
-
-        [byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]
-    }
-}
-
-pub struct ZephyrTestContract;
-
-impl ContractFunctionSet for ZephyrTestContract {
-    fn call(&self, _func: &Symbol, host: &soroban_env_host::Host, _args: &[Val]) -> Option<Val> {
-        None
-    }
-}
+pub(crate) mod database;
+pub(crate) mod memory;
+pub(crate) mod soroban;
+pub(crate) mod utils;
 
 type ZephyrRelayer = UnboundedSender<Vec<u8>>;
 
@@ -138,9 +105,6 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// - a request body < for functions  
     pub latest_close: RefCell<Option<Vec<u8>>>, // some zephyr programs might not need the ledger close meta
 
-    /// Implementation of the Shielded Store.
-    pub shielded_store: RefCell<ShieldedStore>,
-
     /// Database implementation.
     pub database: RefCell<Database<DB>>,
 
@@ -181,14 +145,16 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             let (sequence, timestamp) = snapshot_utils::get_current_ledger_sequence();
             li.sequence_number = sequence as u32;
             li.timestamp = timestamp as u64;
-        });
-        host.enable_debug();
+        })?;
+        host.enable_debug()?;
 
-        let test_contract = Rc::new(ZephyrTestContract {});
-        let dummy_id = [0; 32];
-        let dummy_address = ScAddress::Contract(Hash(dummy_id));
-        let contract_id = host.add_host_object(dummy_address).unwrap();
+        let test_contract = Rc::new(ZephyrTestContract::new());
+        let contract_id_bytes = [0; 32];
+        let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
+        let contract_id = host.add_host_object(contract_address).unwrap();
 
+        // Since Soroban's Host relies on a contract to give context to the execution actions
+        // performed in the ZephyrVM are connected to a non-existing sample contract address.
         host.register_test_contract(contract_id, test_contract)?;
 
         Ok(Self(Rc::new(HostImpl {
@@ -197,7 +163,6 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
-            shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::zephyr_standard()?),
             ledger: Ledger::zephyr_standard()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
@@ -216,10 +181,13 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
         let host = soroban_env_host::Host::test_host_with_recording_footprint();
         host.as_budget().reset_unlimited().unwrap();
         let test_contract = Rc::new(ZephyrTestContract {});
-        let dummy_id = [0; 32];
-        let dummy_address = ScAddress::Contract(Hash(dummy_id));
-        let contract_id = host.add_host_object(dummy_address).unwrap();
-        host.register_test_contract(contract_id, test_contract);
+        let contract_id_bytes = [0; 32];
+        let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
+        let contract_id = host.add_host_object(contract_address).unwrap();
+
+        // Since Soroban's Host relies on a contract to give context to the execution actions
+        // performed in the ZephyrVM are connected to a non-existing sample contract address.
+        let _ = host.register_test_contract(contract_id, test_contract);
 
         Ok(Self(Rc::new(HostImpl {
             id: 0,
@@ -227,7 +195,6 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
             transmitter: RefCell::new(None),
             result: RefCell::new(String::new()),
             latest_close: RefCell::new(None),
-            shielded_store: RefCell::new(ShieldedStore::default()),
             database: RefCell::new(Database::mocked()?),
             ledger: Ledger::mocked()?,
             budget: RefCell::new(Budget::zephyr_standard()?),
@@ -274,39 +241,6 @@ pub struct SorobanTempFunctionInfo<
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB, L> {
-    pub fn soroban_host(caller: &Caller<Self>) -> soroban_env_host::Host {
-        let host = caller.data();
-        host.0.soroban.borrow().to_owned()
-    }
-
-    pub fn get_memory(caller: &Caller<Self>) -> Memory {
-        let host = caller.data();
-
-        let memory = {
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-            let mem_manager = &vm.memory_manager;
-
-            mem_manager.memory
-        };
-
-        memory
-    }
-
-    pub fn get_memory_mut(caller: &mut Caller<Self>) -> Memory {
-        let host = caller.data();
-
-        let memory = {
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-            let mem_manager = &vm.memory_manager;
-
-            mem_manager.memory
-        };
-
-        memory
-    }
-
     /// Loads the ledger close meta bytes of the ledger the Zephyr VM will have
     /// access to.
     ///
@@ -396,591 +330,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Self::write_to_memory(caller, ledger_close_meta.as_slice())
     }
 
-    fn write_to_memory(mut caller: Caller<Self>, contents: &[u8]) -> Result<(i64, i64)> {
-        let (memory, offset, data) = {
-            let host = caller.data();
-
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap(); // todo: make safe
-
-            let manager = &vm.memory_manager;
-            let memory = manager.memory;
-
-            let mut offset_mut = manager.offset.borrow_mut();
-            let new_offset = offset_mut.checked_add(contents.len()).unwrap();
-
-            *offset_mut = new_offset;
-
-            (memory, new_offset, contents)
-        };
-
-        // TODO: this should actually only grow the linear memory when needed, so check the current
-        // pages and the size of the contents to compute a safe pages size (else error with a growth error).
-        // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
-        let _ = memory.grow(&mut caller, Pages::new(1000).unwrap());
-
-        if let Err(error) = memory.write(&mut caller, offset, data) {
-            return Err(anyhow!(error));
-        };
-
-        Ok((offset as i64, data.len() as i64))
-    }
-
-    fn write_to_memory_mut(caller: &mut Caller<Self>, pos: u32, contents: &[u8]) -> Result<i64> {
-        let memory = Host::get_memory(caller);
-
-        // TODO: this should actually only grow the linear memory when needed, so check the current
-        // pages and the size of the contents to compute a safe pages size (else error with a growth error).
-        // Currently we don't unwrap this and allow the program to grow unbounded <- this is unsafe and only temporary.
-        //let _ = memory.grow(caller, Pages::new(1000).unwrap());
-
-        if let Err(error) = memory.write(caller, pos as usize, contents) {
-            return Err(anyhow!(error));
-        };
-
-        Ok((pos + contents.len() as u32) as i64)
-    }
-
-    // **Note**
-    // `write_database_raw` currently directly calls the database implementation
-    // to write the database. Once the shield store implementation is ready this will
-    // await for end of execution and handle + execute the transaction.
-    fn write_database_raw(caller: Caller<Self>) -> Result<()> {
-        let (memory, write_point_hash, columns, segments) = {
-            let host = caller.data();
-            let stack_impl = host.as_stack_mut();
-
-            let id = {
-                let value = host.get_host_id();
-                byte_utils::i64_to_bytes(value)
-            };
-
-            let write_point_hash: [u8; 16] = {
-                let point_raw = stack_impl.0.get_with_step()?;
-                let point_bytes = byte_utils::i64_to_bytes(point_raw);
-                md5::compute([point_bytes, id].concat()).into()
-            };
-
-            let columns = {
-                let columns_size_idx = stack_impl.0.get_with_step()?;
-                let mut columns: Vec<i64> = Vec::new();
-                for _ in 0..columns_size_idx as usize {
-                    columns.push(stack_impl.0.get_with_step()?);
-                }
-                columns
-            };
-
-            let data_segments = {
-                let mut segments: Vec<(i64, i64)> = Vec::new();
-                let data_segments_size_idx = {
-                    let non_fixed = stack_impl.0.get_with_step()?;
-                    (non_fixed * 2) as usize
-                };
-                for _ in (0..data_segments_size_idx).step_by(2) {
-                    let offset = stack_impl.0.get_with_step()?;
-                    let size = stack_impl.0.get_with_step()?;
-                    segments.push((offset, size))
-                }
-                segments
-            };
-
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-            let mem_manager = &vm.memory_manager;
-            stack_impl.0.clear();
-
-            (mem_manager.memory, write_point_hash, columns, data_segments)
-        };
-
-        let aggregated_data = segments
-            .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let host = caller.data();
-        let db_obj = host.0.database.borrow();
-        let db_impl = &db_obj.0;
-
-        if let DatabasePermissions::ReadOnly = db_impl.permissions {
-            return Err(DatabaseError::WriteOnReadOnly.into());
-        }
-
-        db_impl.db.write_raw(
-            host.get_host_id(),
-            write_point_hash,
-            &columns,
-            aggregated_data,
-        )?;
-
-        Ok(())
-    }
-
-    fn update_database_raw(caller: Caller<Self>) -> Result<()> {
-        let (memory, write_point_hash, columns, segments, conditions, conditions_args) = {
-            let host = caller.data();
-
-            let stack_impl = host.as_stack_mut();
-
-            let id = {
-                let value = host.get_host_id();
-                byte_utils::i64_to_bytes(value)
-            };
-
-            let write_point_hash: [u8; 16] = {
-                let point_raw = stack_impl.0.get_with_step()?;
-                let point_bytes = byte_utils::i64_to_bytes(point_raw);
-                md5::compute([point_bytes, id].concat()).into()
-            };
-
-            let columns = {
-                let columns_size_idx = stack_impl.0.get_with_step()?;
-                let mut columns: Vec<i64> = Vec::new();
-
-                for _ in 0..columns_size_idx as usize {
-                    columns.push(stack_impl.0.get_with_step()?);
-                }
-
-                columns
-            };
-
-            let data_segments = {
-                let mut segments: Vec<(i64, i64)> = Vec::new();
-
-                let data_segments_size_idx = {
-                    let non_fixed = stack_impl.0.get_with_step()?;
-                    (non_fixed * 2) as usize
-                };
-
-                for _ in (0..data_segments_size_idx).step_by(2) {
-                    let offset = stack_impl.0.get_with_step()?;
-                    let size = stack_impl.0.get_with_step()?;
-                    segments.push((offset, size))
-                }
-                segments
-            };
-
-            let conditions = {
-                let mut conditions = Vec::new();
-
-                let conditions_length = {
-                    let non_fixed = stack_impl.0.get_with_step()?;
-                    (non_fixed * 2) as usize
-                };
-
-                for _ in (0..conditions_length).step_by(2) {
-                    let column = stack_impl.0.get_with_step()?;
-                    let operator = stack_impl.0.get_with_step()?;
-                    conditions.push(WhereCond::from_column_and_operator(column, operator)?);
-                }
-
-                conditions
-            };
-
-            let conditions_args = {
-                let mut segments = Vec::new();
-
-                let args_length = {
-                    let non_fixed = stack_impl.0.get_with_step()?;
-                    (non_fixed * 2) as usize
-                };
-
-                for _ in (0..args_length).step_by(2) {
-                    let offset = stack_impl.0.get_with_step()?;
-                    let size = stack_impl.0.get_with_step()?;
-                    segments.push((offset, size))
-                }
-
-                segments
-            };
-
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-            let mem_manager = &vm.memory_manager;
-
-            stack_impl.0.clear();
-
-            (
-                mem_manager.memory,
-                write_point_hash,
-                columns,
-                data_segments,
-                conditions,
-                conditions_args,
-            )
-        };
-
-        let aggregated_data = segments
-            .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let aggregated_conditions_args = conditions_args
-            .iter()
-            .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let host = caller.data();
-        let db_obj = host.0.database.borrow();
-        let db_impl = db_obj.0.borrow();
-
-        if let DatabasePermissions::ReadOnly = db_impl.permissions {
-            return Err(DatabaseError::WriteOnReadOnly.into());
-        }
-
-        db_impl.db.update_raw(
-            host.get_host_id(),
-            write_point_hash,
-            &columns,
-            aggregated_data,
-            &conditions,
-            aggregated_conditions_args,
-        )?;
-
-        Ok(())
-    }
-
-    
-    // todo: read from other id notice for payment.
-    fn read_database_as_id(caller: Caller<Self>, host_id: i64) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let read = host.read_database_raw(host_id, &caller)?;
-        Self::write_to_memory(caller, read.as_slice())
-    }
-
-    fn read_database_self(caller: Caller<Self>) -> Result<(i64, i64)> {
-        let host = caller.data();
-        let host_id = host.get_host_id();
-
-        let read = host.read_database_raw(host_id, &caller)?;
-        Self::write_to_memory(caller, read.as_slice())
-    }
-
-    fn read_database_raw(&self, host_id: i64, caller: &Caller<Self>) -> Result<Vec<u8>> {
-        //let host = caller.data();
-        let host = self;
-        let read = {
-            let db_obj = host.0.database.borrow();
-            let db_impl = db_obj.0.borrow();
-            
-            let stack_impl = &host.as_stack_mut().0;
-            
-            //let stack_obj = host.0.stack.borrow_mut();
-            //let stack = stack_obj.0.inner.borrow_mut();
-
-            if let DatabasePermissions::WriteOnly = db_impl.permissions {
-                return Err(DatabaseError::ReadOnWriteOnly.into());
-            }
-
-            // let id = {
-                // let value = host.get_host_id();
-                // byte_utils::i64_to_bytes(value)
-            // };
-
-            let id = byte_utils::i64_to_bytes(host_id);
-
-            let read_point_hash: [u8; 16] = {
-                //let point_raw = stack.first().ok_or(HostError::NoValOnStack)?;
-                let point_raw = stack_impl.get_with_step()?;
-                let point_bytes = byte_utils::i64_to_bytes(point_raw);
-
-                md5::compute([point_bytes, id].concat()).into()
-            };
-
-            let read_data = {
-                //let data_size_idx = stack.get(1).ok_or(HostError::NoValOnStack)? + 2;
-                let data_size_idx = stack_impl.get_with_step()?;
-                let mut retrn = Vec::new();
-
-                for _ in 0..data_size_idx {
-                    retrn.push(stack_impl.get_with_step()?);
-                }
-
-                retrn
-            };
-
-            println!("getting conditions");
-            let conditions = {
-                let mut conditions = Vec::new();
-                
-                let non_fixed = stack_impl.get_with_step();
-                println!("found {:?} conditions", non_fixed);
-
-                // Note: if there is an extra argument here specifying the conditions length
-                // we assume that it's safe to halt execution if the subsequent stack is malformed
-                if let Ok(non_fixed) = non_fixed {
-                    let conditions_length = (non_fixed * 2) as usize;
-
-                    for _ in (0..conditions_length).step_by(2) {
-                        let column = stack_impl.get_with_step()?;
-                        let operator = stack_impl.get_with_step()?;
-                        conditions.push(WhereCond::from_column_and_operator(column, operator)?);
-                    }
-
-                    Some(conditions)
-                } else {
-                    None
-                }
-            };
-
-            println!("query does have conditions");
-            let has_conditions = conditions.is_some();
-
-            let conditions_args = if has_conditions {
-                let mut segments = Vec::new();
-
-                let args_length = {
-                    let non_fixed = stack_impl.get_with_step()?;
-                    (non_fixed * 2) as usize
-                };
-
-                for _ in (0..args_length).step_by(2) {
-                    let offset = stack_impl.get_with_step()?;
-                    let size = stack_impl.get_with_step()?;
-                    segments.push((offset, size))
-                }
-
-                Some(segments)
-            } else {
-                None
-            };
-
-            println!("About to aggregate condition args");
-
-            let aggregated_conditions_args = if has_conditions {
-                let memory = Self::get_memory(caller);
-                Some(conditions_args.unwrap()
-                    .iter()
-                    .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
-                    .collect::<Result<Vec<_>, _>>()?)
-            } else {
-                None
-            };
-
-            println!("aggregated condition args");
-
-
-            let user_id = host.get_host_id();
-            stack_impl.clear();
-
-            db_impl
-                .db
-                .read_raw(user_id, read_point_hash, &read_data, conditions.as_ref().map(Vec::as_slice), aggregated_conditions_args)?
-        };
-
-        Ok(read)
-    }
-
-    fn internal_read_contract_data_entry_by_contract_id_and_key(
-        caller: Caller<Self>,
-        contract: [u8; 32],
-        key: ScVal,
-    ) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let contract = ScAddress::Contract(Hash(contract));
-        let read = {
-            let ledger = &host.0.ledger.0.ledger;
-            bincode::serialize(
-                &ledger.read_contract_data_entry_by_contract_id_and_key(contract, key),
-            )
-            .unwrap()
-        };
-
-        Self::write_to_memory(caller, &read)
-    }
-
-    pub fn read_contract_data_entry_by_contract_id_and_key(
-        caller: Caller<Self>,
-        contract: [u8; 32],
-        offset: i64,
-        size: i64,
-    ) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let key = {
-            let memory = {
-                let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-                let mem_manager = &vm.memory_manager;
-
-                mem_manager.memory
-            };
-
-            let segment = (offset, size);
-
-            ScVal::from_xdr(
-                Self::read_segment_from_memory(&memory, &caller, segment)?,
-                Limits::none(),
-            )?
-        };
-
-        Self::internal_read_contract_data_entry_by_contract_id_and_key(caller, contract, key)
-    }
-
-    pub fn read_contract_instance(caller: Caller<Self>, contract: [u8; 32]) -> Result<(i64, i64)> {
-        let key = ScVal::LedgerKeyContractInstance;
-
-        Self::internal_read_contract_data_entry_by_contract_id_and_key(caller, contract, key)
-    }
-
-    pub fn read_contract_entries(caller: Caller<Self>, contract: [u8; 32]) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let contract = ScAddress::Contract(Hash(contract));
-        let read = {
-            let ledger = &host.0.ledger.0.ledger;
-            bincode::serialize(&ledger.read_contract_data_entries_by_contract_id(contract)).unwrap()
-        };
-
-        Self::write_to_memory(caller, &read)
-    }
-
-    pub fn scval_to_valid_host_val(caller: Caller<Self>, scval: &ScVal) -> Result<i64> {
-        let host = caller.data();
-
-        let (soroban, val) = {
-            let soroban = host.0.soroban.borrow().to_owned();
-            soroban.as_budget().reset_unlimited().unwrap();
-
-            soroban.enable_debug().unwrap();
-
-            let val = soroban
-                .with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
-                    soroban.to_valid_host_val(scval)
-                })?
-                .get_payload() as i64;
-
-            (soroban, val)
-        };
-
-        *host.0.soroban.borrow_mut() = soroban;
-
-        Ok(val)
-    }
-
-    pub fn valid_host_val_to_scval(caller: Caller<Self>, val: Val) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let res = {
-            let soroban = host.0.soroban.borrow().to_owned();
-            soroban.as_budget().reset_unlimited().unwrap();
-
-            soroban.enable_debug().unwrap();
-            let scval = ScVal::try_from_val(&soroban, &val).unwrap();
-            Self::write_to_memory(caller, &scval.to_xdr(Limits::none()).unwrap())
-        };
-
-        res
-    }
-
-    pub fn simulate_soroban_transaction(
-        caller: Caller<Self>,
-        source: [u8; 32],
-        offset: i64,
-        size: i64,
-    ) -> Result<(i64, i64)> {
-        let host = caller.data();
-
-        let host_fn = {
-            let memory = {
-                let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-                let mem_manager = &vm.memory_manager;
-
-                mem_manager.memory
-            };
-
-            let segment = (offset, size);
-            let bytes = Self::read_segment_from_memory(&memory, &caller, segment)?;
-
-            HostFunction::from_xdr(bytes, Limits::none())?
-        };
-
-        let snapshot_source = Rc::new(DynamicSnapshot {});
-        let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
-        let mut ledger_info = LedgerInfo::default();
-        ledger_info.protocol_version = 21;
-        let ledger_from_state = snapshot_utils::get_current_ledger_sequence();
-        ledger_info.sequence_number = ledger_from_state.0 as u32;
-        ledger_info.timestamp = ledger_from_state.1 as u64;
-        ledger_info.network_id = host.0.network_id;
-        ledger_info.max_entry_ttl = 3110400;
-        let bucket_size: u64 = {
-            let string = std::fs::read_to_string("/tmp/currentbucketsize").unwrap(); // unrecoverable: todo handle this
-            string.parse().unwrap()
-        };
-        let network_config =
-            NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size).unwrap();
-        network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
-
-        println!("simulating the tx");
-        let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
-            snapshot_source,
-            Some(network_config),
-            &SimulationAdjustmentConfig::default_adjustment(),
-            &ledger_info,
-            host_fn,
-            None,
-            &source,
-            [0; 32],
-            true,
-        )
-        .unwrap();
-        println!("simulated");
-        Self::write_to_memory(caller, &bincode::serialize(&resp).unwrap())
-    }
-
-    pub fn read_contract_entries_to_env(caller: Caller<Self>, contract: [u8; 32]) -> Result<i64> {
-        let host = caller.data();
-
-        let (soroban, val) = {
-            let contract = ScAddress::Contract(Hash(contract));
-            let ledger = &host.0.ledger.0.ledger;
-
-            let data = ledger.read_contract_data_entries_by_contract_id(contract);
-
-            let soroban = host.0.soroban.borrow().to_owned();
-            soroban.as_budget().reset_unlimited().unwrap();
-
-            soroban.enable_debug().unwrap();
-            //let mut current = soroban.get_ledger_info().unwrap().unwrap_or_default();
-            //let map = soroban.map_new().unwrap();
-
-            let val = soroban
-                .with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
-                    let mut map = soroban.map_new().unwrap();
-
-                    for entry in data {
-                        let LedgerEntryData::ContractData(d) = entry.entry.data else {
-                            panic!("invalid xdr")
-                        };
-
-                        if d.key != ScVal::LedgerKeyContractInstance {
-                            let key = soroban.to_valid_host_val(&d.key).unwrap();
-                            let val = soroban.to_valid_host_val(&d.val).unwrap();
-
-                            map = soroban.map_put(map, key, val).unwrap();
-                        }
-                    }
-
-                    soroban.enable_debug().unwrap();
-
-                    Ok(map.into())
-                })
-                .unwrap()
-                .get_payload() as i64;
-
-            let map = MapObject::try_from_val(&soroban, &Val::from_payload(val as u64)).unwrap();
-
-            (soroban, val)
-        };
-
-        *host.0.soroban.borrow_mut() = soroban;
-
-        Ok(val)
-    }
-
     /// Sends a message to any receiver whose sender has been provided to the
     /// host object.
     pub fn send_message(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
@@ -1005,6 +354,29 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         tx.send(message)?;
 
         Ok(())
+    }
+
+    fn write_result(caller: Caller<Self>, offset: i64, size: i64) {
+        let host = caller.data();
+
+        let memory = {
+            let context = host.0.context.borrow();
+            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let mem_manager = &vm.memory_manager;
+
+            mem_manager.memory
+        };
+
+        let segment = (offset, size);
+        let seg = Self::read_segment_from_memory(&memory, &caller, segment).unwrap();
+        let res: String = bincode::deserialize(&seg).unwrap();
+
+        host.0.result.borrow_mut().push_str(&res);
+    }
+
+    /// Read a result string potentially written from the guest environment.
+    pub fn read_result(&self) -> String {
+        self.0.result.borrow().clone()
     }
 
     /// Returns all the host functions that must be defined in the linker.
@@ -1325,56 +697,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
-        let wbin_descr_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
-                println!("placeholder describe: {}", param);
-            });
-
-            FunctionInfo {
-                module: "__wbindgen_placeholder__",
-                func: "__wbindgen_describe",
-                wrapped,
-            }
-        };
-
-        let wbin_throw_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32, param1: i32| {
-                println!("placeholder throw: {}", param);
-            });
-
-            FunctionInfo {
-                module: "__wbindgen_placeholder__",
-                func: "__wbindgen_throw",
-                wrapped,
-            }
-        };
-
-        let wbin_tab_grow_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
-                println!("table grow: {}", param);
-
-                param
-            });
-
-            FunctionInfo {
-                module: "__wbindgen_externref_xform__",
-                func: "__wbindgen_externref_table_grow",
-                wrapped,
-            }
-        };
-
-        let wbin_tab_set_null_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i32| {
-                println!("table grow: {}", param);
-            });
-
-            FunctionInfo {
-                module: "__wbindgen_externref_xform__",
-                func: "__wbindgen_externref_table_set_null",
-                wrapped,
-            }
-        };
-
         let stack_push_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, param: i64| {
                 let host: &Host<DB, L> = caller.data();
@@ -1419,64 +741,28 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
-
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
 
-                    let effects = || {
-                        let res: Result<_, soroban_env_host::HostError> = host
+                    let effect = |host: soroban_env_host::Host| {
+                        let result: Result<_, soroban_env_host::HostError> = host
                             .string_new_from_linear_memory_mem(
                                 vm_ctx,
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(lm_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, result)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("todo")
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1491,67 +777,29 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let wrapped = Func::wrap(
                 &mut store,
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
-                    println!("symbol form linear memory");
-
                     let vm_ctx = CustomVMCtx::new(&caller);
-
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
 
-                    let effects = || {
-                        let res: Result<_, soroban_env_host::HostError> = host
+                    let effect = |host: soroban_env_host::Host| {
+                        let result: Result<_, soroban_env_host::HostError> = host
                             .symbol_new_from_linear_memory_mem(
                                 vm_ctx,
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(lm_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, result)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("todo")
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1567,11 +815,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, sym: i64, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
-
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
-
-                    let effects = || {
+                    let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .symbol_index_in_linear_memory_mem(
                                 vm_ctx,
@@ -1584,56 +829,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                     &host,
                                 )
                                 .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(lm_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, res)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("{:?}", hosterr)
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1649,64 +860,27 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
-
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
-
-                    let effects = || {
+                    let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .vec_new_from_linear_memory_mem(
                                 vm_ctx,
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(lm_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, res)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("{:?}", hosterr)
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1722,64 +896,26 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
-
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
-
-                    let effects = || {
+                    let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .bytes_new_from_linear_memory_mem(
                                 vm_ctx,
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(lm_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+                        with_frame(host, res)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("{:?}", hosterr)
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1790,14 +926,57 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let bytes_copy_to_linear_memory_mem = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, b: i64, b_pos: i64, lm_pos: i64, len: i64| {
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    let effect = |host: soroban_env_host::Host| {
+                        let mut vm_ctx = CustomVMCtx::new_mut(caller);
+                        let res: Result<_, soroban_env_host::HostError> = host
+                            .bytes_copy_to_linear_memory_mem(
+                                &mut vm_ctx,
+                                BytesObject::check_env_arg(
+                                    BytesObject::try_marshal_from_relative_value(
+                                        soroban_wasmi::Value::I64(b),
+                                        &host,
+                                    )
+                                    .unwrap(),
+                                    &host,
+                                )
+                                .unwrap(),
+                                build_u32val(&host, b_pos)?,
+                                build_u32val(&host, lm_pos)?,
+                                build_u32val(&host, len)?,
+                            );
+                        with_frame(host, res)
+                    };
+
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
+                },
+            );
+
+            FunctionInfo {
+                module: "b",
+                func: "1",
+                wrapped,
+            }
+        };
+
         let map_unpack_to_linear_memory_fn_mem = {
             let wrapped = Func::wrap(
                 &mut store,
                 |caller: Caller<Host<DB, L>>, map: i64, keys_pos: i64, vals_pos: i64, len: i64| {
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
-
-                    let mut effects = || {
+                    let effect = |host: soroban_env_host::Host| {
                         let mut vm_ctx = CustomVMCtx::new_mut(caller);
                         let res: Result<_, soroban_env_host::HostError> = host
                             .map_unpack_to_linear_memory_fn_mem(
@@ -1811,65 +990,23 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                     &host,
                                 )
                                 .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(keys_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(vals_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, keys_pos)?,
+                                build_u32val(&host, vals_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, res)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("{:?}", hosterr)
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1885,9 +1022,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, vec: i64, vals_pos: i64, len: i64| {
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
-
-                    let mut effects = || {
+                    let effect = |host: soroban_env_host::Host| {
                         let mut vm_ctx = CustomVMCtx::new_mut(caller);
                         let res: Result<_, soroban_env_host::HostError> = host
                             .vec_unpack_to_linear_memory_mem(
@@ -1901,56 +1036,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                     &host,
                                 )
                                 .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(vals_pos),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
-                                U32Val::check_env_arg(
-                                    U32Val::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(len),
-                                        &host,
-                                    )
-                                    .unwrap(),
-                                    &host,
-                                )
-                                .unwrap(),
+                                build_u32val(&host, vals_pos)?,
+                                build_u32val(&host, len)?,
                             );
-                        res
+
+                        with_frame(host, res)
                     };
 
-                    let res = host.with_test_contract_frame(
-                        Hash([0; 32]),
-                        Symbol::from_small_str("test"),
-                        || {
-                            let res = effects();
-                            let res = match res {
-                                Ok(ok) => {
-                                    let ok = ok.check_env_arg(&host).unwrap();
-
-                                    let val: soroban_wasmi::Value =
-                                        ok.marshal_relative_from_self(&host).unwrap();
-
-                                    if let soroban_wasmi::Value::I64(v) = val {
-                                        Ok((v,))
-                                    } else {
-                                        Err(0)
-                                    }
-                                }
-                                Err(hosterr) => {
-                                    panic!("{:?}", hosterr)
-                                }
-                            };
-
-                            Ok(Val::from_payload(res.unwrap().0 as u64))
-                        },
-                    );
-
-                    res.unwrap().get_payload() as i64
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
                 },
             );
 
@@ -1960,50 +1061,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 wrapped,
             }
         };
-
-        /*let memobj_copy_from_linear_memory = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, obj: i64, obj_pos: i64,  lm_pos: i64, len: i64| {
-                let vm_ctx = CustomVMCtx::new(&caller);
-
-                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                host.enable_debug();
-
-                let effects = || {
-                    let res: Result<_, soroban_env_host::HostError> = host.symbol_index_in_linear_memory_mem(vm_ctx, Symbol::check_env_arg(Symbol::try_marshal_from_relative_value(soroban_wasmi::Value::I64(sym), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(lm_pos), &host).unwrap(), &host).unwrap(), U32Val::check_env_arg(U32Val::try_marshal_from_relative_value(soroban_wasmi::Value::I64(len), &host).unwrap(), &host).unwrap());
-                    res
-                };
-
-                let res = host.with_test_contract_frame(Hash([0;32]), Symbol::from_small_str("test"), || {
-                    let res = effects();
-                    let res = match res {
-                        Ok(ok) => {
-                            let ok = ok.check_env_arg(&host).unwrap();
-
-                            let val: soroban_wasmi::Value = ok.marshal_relative_from_self(&host).unwrap();
-
-                            if let soroban_wasmi::Value::I64(v) = val {
-                                Ok((v,))
-                            } else {
-                                Err(0)
-                            }
-                        },
-                        Err(hosterr) => {
-                            panic!("{:?}", hosterr)
-                        }
-                    };
-
-                    Ok(Val::from_payload(res.unwrap().0 as u64))
-                });
-
-                res.unwrap().get_payload() as i64
-            });
-
-            FunctionInfo {
-                module: "b",
-                func: "m",
-                wrapped,
-            }
-        };*/
 
         let soroban_simulate_tx_fn = {
             let wrapped = Func::wrap(
@@ -2055,10 +1112,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             read_contract_entries_to_env_fn,
             conclude_fn,
             send_message_fn,
-            wbin_descr_fn,
-            wbin_throw_fn,
-            wbin_tab_grow_fn,
-            wbin_tab_set_null_fn,
             string_from_linmem,
             symbol_index_from_linmem,
             vec_new_from_linear_memory_mem,
@@ -2067,106 +1120,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             map_unpack_to_linear_memory_fn_mem,
             vec_unpack_to_linear_memory_fn_mem,
             soroban_simulate_tx_fn,
-
-            db_read_as_id_fn
+            bytes_copy_to_linear_memory_mem,
+            db_read_as_id_fn,
         ];
 
         soroban_functions.append(&mut arr);
         soroban_functions.reverse();
 
         soroban_functions
-    }
-
-    fn write_result(caller: Caller<Self>, offset: i64, size: i64) {
-        let host = caller.data();
-
-        let memory = {
-            let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
-            let mem_manager = &vm.memory_manager;
-
-            mem_manager.memory
-        };
-
-        let segment = (offset, size);
-        let seg = Self::read_segment_from_memory(&memory, &caller, segment).unwrap();
-        let res: String = bincode::deserialize(&seg).unwrap();
-
-        host.0.result.borrow_mut().push_str(&res);
-    }
-
-    fn read_segment_from_memory(
-        memory: &Memory,
-        caller: &Caller<Self>,
-        segment: (i64, i64),
-    ) -> Result<Vec<u8>> {
-        let mut written_vec = vec![0; segment.1 as usize];
-        if let Err(error) = memory.read(caller, segment.0 as usize, &mut written_vec) {
-            return Err(anyhow!(error));
-        }
-
-        Ok(written_vec)
-    }
-
-    pub fn read_result(&self) -> String {
-        self.0.result.borrow().clone()
-    }
-}
-
-pub struct CustomVMCtx<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> {
-    caller: Option<&'a Caller<'a, Host<DB, L>>>,
-    caller_mut: Option<Caller<'a, Host<DB, L>>>,
-}
-
-impl<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> CustomVMCtx<'a, DB, L> {
-    fn new(ctx: &'a Caller<Host<DB, L>>) -> Self {
-        Self {
-            caller: Some(ctx),
-            caller_mut: None,
-        }
-    }
-
-    fn new_mut(ctx: Caller<'a, Host<DB, L>>) -> Self {
-        Self {
-            caller: None,
-            caller_mut: Some(ctx),
-        }
-    }
-}
-
-impl<'a, DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> CustomContextVM
-    for CustomVMCtx<'a, DB, L>
-{
-    fn read(&self, mem_pos: usize, buf: &mut [u8]) {
-        if let Some(caller) = self.caller {
-            Host::get_memory(caller).read(caller, mem_pos, buf);
-        } else {
-            Host::get_memory(self.caller_mut.as_ref().unwrap()).read(
-                self.caller_mut.as_ref().unwrap(),
-                mem_pos,
-                buf,
-            );
-        }
-    }
-
-    fn data(&self) -> &[u8] {
-        if let Some(caller) = self.caller {
-            Host::get_memory(caller).data(caller)
-        } else {
-            Host::get_memory(self.caller_mut.as_ref().unwrap())
-                .data(self.caller_mut.as_ref().unwrap())
-        }
-    }
-
-    fn write(&mut self, pos: u32, slice: &[u8]) -> i64 {
-        Host::write_to_memory_mut(self.caller_mut.as_mut().unwrap(), pos, slice).unwrap()
-    }
-
-    fn data_mut(&mut self) -> &mut [u8] {
-        if let Some(caller) = self.caller_mut.as_mut() {
-            Host::get_memory_mut(caller).data_mut(caller)
-        } else {
-            &mut []
-        }
     }
 }

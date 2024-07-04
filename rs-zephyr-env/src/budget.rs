@@ -1,7 +1,8 @@
-//! This module defines the budget-related structures and
-//! implementations for the Zephyr host.
+//! Metering is currently not being developed for the ZephyrVM
 //!
-//! Metering is defined within this module.
+//! The only purpose of this module in its current state
+//! is serving default fuel to the WASMI VM.
+//!
 
 use anyhow::Result;
 use std::{cell::RefCell, rc::Rc};

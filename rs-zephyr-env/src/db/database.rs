@@ -5,11 +5,9 @@
 //! must provide the Zephyr host environment with a valid implementation
 //! of the Database.
 
+use crate::{ZephyrMock, ZephyrStandard};
 use anyhow::Result;
 use rs_zephyr_common::DatabaseError;
-use std::{cell::RefCell, rc::Rc};
-
-use crate::{ZephyrMock, ZephyrStandard};
 
 pub enum WhereCond {
     /// Where column i64 is equal to the corresponding condition
