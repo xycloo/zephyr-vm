@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "rs-zephyr-env", 
     "rs-zephyr-common",
-    "inner-serverless-handler",
     "macros", 
     "wasm-tests/db-write-read", 
     "wasm-tests/db-write-update-read"

@@ -1,1 +1,0 @@
-Older and unsafe implementation of a serverless handler.
