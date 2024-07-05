@@ -1,4 +1,4 @@
-use zephyr_sdk::{prelude::*, EnvClient, DatabaseDerive};
+use zephyr_sdk::{prelude::*, DatabaseDerive, EnvClient};
 
 #[derive(DatabaseDerive)]
 #[with_name("hello")]
@@ -8,9 +8,7 @@ pub struct Hello {
 
 impl Hello {
     pub fn t() -> Self {
-        Self {
-            tdep: true as i32,
-        }
+        Self { tdep: true as i32 }
     }
 }
 
@@ -18,9 +16,9 @@ impl Hello {
 pub extern "C" fn on_close() {
     let env = EnvClient::empty();
 
-    env.put(&Hello::t());    
+    env.put(&Hello::t());
     let read: Vec<Hello> = env.read();
-    
+
     if read.len() != 1 {
         panic!()
     }

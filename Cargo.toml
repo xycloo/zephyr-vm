@@ -7,7 +7,7 @@ members = [
     "macros", 
     "wasm-tests/db-write-read", 
     "wasm-tests/db-write-update-read"
-, "wasm-tests/soroban-host"]
+, "wasm-tests/soroban-host", "ledger-meta-factory"]
 
 
 [profile.release]

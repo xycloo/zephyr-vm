@@ -1,5 +1,8 @@
 use super::Host;
-use crate::db::{database::ZephyrDatabase, ledger::LedgerStateRead};
+use crate::{
+    db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    error::{HostError, InternalError},
+};
 use anyhow::{anyhow, Result};
 use soroban_env_host::vm::CustomContextVM;
 use wasmi::{core::Pages, Caller, Memory};
@@ -86,13 +89,20 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let host = caller.data();
 
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap(); // todo: make safe
+            let vm = context
+                .vm
+                .as_ref()
+                .ok_or_else(|| HostError::NoContext)?
+                .upgrade()
+                .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
 
             let manager = &vm.memory_manager;
             let memory = manager.memory;
 
             let mut offset_mut = manager.offset.borrow_mut();
-            let new_offset = offset_mut.checked_add(contents.len()).unwrap();
+            let new_offset = offset_mut
+                .checked_add(contents.len())
+                .ok_or_else(|| HostError::InternalError(InternalError::ArithError))?;
 
             *offset_mut = new_offset;
 

@@ -36,7 +36,6 @@ query Test {{
     Request { query }
 }
 
-
 pub fn get_query_after_ledger(contracts: &[String], ledger: i64) -> Request {
     let mut contracts_string = String::from("[");
     for (idx, contract) in contracts.iter().enumerate() {
@@ -120,7 +119,6 @@ pub struct Data {
 pub struct Response {
     pub data: Data,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DataAfterLedger {

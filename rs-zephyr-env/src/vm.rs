@@ -7,7 +7,7 @@ use wasmi::{Engine, Instance, Linker, Memory, Module, StackLimits, Store};
 
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},
-    error::HostError,
+    error::{HostError, InternalError},
     host::{Host, InvokedFunctionInfo},
 };
 
@@ -65,7 +65,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
             MAX_VALUE_STACK_HEIGHT,
             MAX_RECURSION_DEPTH,
         )
-        .unwrap();
+        .map_err(|_| HostError::InternalError(InternalError::WasmiConfig))?;
 
         // TODO: decide which post-mvp features to override.
         // For now we use wasmtime's defaults.
@@ -95,9 +95,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         let instance = instance.start(&mut store)?; // handle
         let memory = instance
             .get_export(&mut store, "memory")
-            .unwrap()
+            .ok_or_else(|| HostError::NoMemoryExport)?
             .into_memory()
-            .unwrap();
+            .ok_or_else(|| HostError::NoMemoryExport)?;
 
         let memory_manager = MemoryManager::new(memory, 0);
 
@@ -141,6 +141,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         Ok(())
     }
 
+    /// Executes the requested exported function of the binary.
     pub fn metered_function_call(
         self: &Rc<Self>,
         host: &Host<DB, L>,
@@ -164,53 +165,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
             None => return Err(HostError::ExternNotAFunction.into()),
         };
 
-        let e = func.call(
+        func.call(
             &mut *store.borrow_mut(),
             invoked_function_info.params.as_slice(),
             &mut retrn,
-        );
-
-        println!("{:?}", e);
-        println!("{:?}", host.read_result());
+        )?;
 
         Ok(host.read_result())
     }
 }
-/*
-#[cfg(test)]
-mod tests {
-    use std::fs::{read, read_to_string};
-    use std::rc::Rc;
-    use stellar_xdr::curr::{Limits, LedgerCloseMeta, ReadXdr, WriteXdr};
-    use crate::{host::Host, testutils::database::MercuryDatabase, ZephyrMock};
-
-    use super::Vm;
-    // Previous tests were removed due to being unstructured
-    // and unorganized.
-    //
-    // Tests of the Mercury integration are currently in Mercury's
-    // codebase.
-    //
-    // TODO: rewrite Zephyr-only tests.
-
-    #[test]
-    fn mainnet_ledger() {
-        // todo rewrite test with proper configs
-        let code = { read("/mnt/storagehdd/projects/master/zephyr-examples/zephyr-hello-ledger/target/wasm32-unknown-unknown/release/zephyr_hello_ledger.wasm").unwrap() };
-        let mainnet_ledger = LedgerCloseMeta::from_xdr_base64(read_to_string("../../mercury/ledger.txt").unwrap(), Limits::none()).unwrap().to_xdr(Limits::none()).unwrap();
-
-        assert!(LedgerCloseMeta::from_xdr(&mainnet_ledger, Limits::none()).is_ok());
-        let mut host = Host::<MercuryDatabase>::mocked().unwrap();
-        host.add_ledger_close_meta(mainnet_ledger).unwrap();
-
-        let start = std::time::Instant::now();
-
-        let vm = Vm::new(&host, code.as_slice()).unwrap();
-
-        host.load_context(Rc::downgrade(&vm)).unwrap();
-
-        vm.metered_call(&host).unwrap();
-
-        println!("elapsed {:?}", start.elapsed());
-    }
-}*/

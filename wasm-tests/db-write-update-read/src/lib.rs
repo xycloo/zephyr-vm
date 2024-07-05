@@ -1,22 +1,18 @@
-use zephyr_sdk::{prelude::*, EnvClient, DatabaseDerive};
+use zephyr_sdk::{prelude::*, DatabaseDerive, EnvClient};
 
 #[derive(DatabaseDerive)]
 #[with_name("hello")]
 pub struct Hello {
-    tdep: i32    
+    tdep: i32,
 }
 
 impl Hello {
     pub fn t() -> Self {
-        Self {
-            tdep: true as i32
-        }
+        Self { tdep: true as i32 }
     }
 
     pub fn f() -> Self {
-        Self {
-            tdep: false as i32
-        }
+        Self { tdep: false as i32 }
     }
 }
 
@@ -25,9 +21,9 @@ pub extern "C" fn on_close() {
     let env = EnvClient::empty();
 
     env.put(&Hello::t());
-    
+
     let read: Vec<Hello> = env.read();
-    
+
     if read.len() != 1 {
         panic!()
     }
@@ -36,10 +32,13 @@ pub extern "C" fn on_close() {
         panic!()
     }
 
-    env.update().column_equal_to("tdep", true as i32).execute(&Hello::f()).unwrap();
+    env.update()
+        .column_equal_to("tdep", true as i32)
+        .execute(&Hello::f())
+        .unwrap();
 
     let read: Vec<Hello> = env.read();
-    
+
     if read.len() != 1 {
         panic!()
     }

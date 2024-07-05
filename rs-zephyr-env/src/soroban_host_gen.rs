@@ -335,7 +335,12 @@ macro_rules! generate_dispatch_functions {
 
                         Ok(Val::from_payload(res.unwrap_or((0, )).0 as u64))
 
-                }).unwrap().get_payload() as i64, )
+                // Note: an error here means a panic on the guest.
+                // In the current state this is acceptable as it stems from inherently wrong
+                // guest data, which can only be intentional.
+                // The downside is that it makes debugging more difficult for third-parties building
+                // new clients.
+                }).unwrap_or(Val::from_payload(0 as u64)).get_payload() as i64, )
                 }
             )*
         )*

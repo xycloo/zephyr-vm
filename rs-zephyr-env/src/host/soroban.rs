@@ -1,6 +1,7 @@
 use super::Host;
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},
+    error::{HostError, InternalError},
     snapshot::{snapshot_utils, DynamicSnapshot},
 };
 use anyhow::Result;
@@ -35,8 +36,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let ledger = &host.0.ledger.0.ledger;
             bincode::serialize(
                 &ledger.read_contract_data_entry_by_contract_id_and_key(contract, key),
-            )
-            .unwrap()
+            )?
         };
 
         Self::write_to_memory(caller, &read)
@@ -53,7 +53,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let key = {
             let memory = {
                 let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let vm = context
+                    .vm
+                    .as_ref()
+                    .ok_or_else(|| HostError::NoContext)?
+                    .upgrade()
+                    .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
                 let mem_manager = &vm.memory_manager;
 
                 mem_manager.memory
@@ -88,7 +93,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let contract = ScAddress::Contract(Hash(contract));
         let read = {
             let ledger = &host.0.ledger.0.ledger;
-            bincode::serialize(&ledger.read_contract_data_entries_by_contract_id(contract)).unwrap()
+            bincode::serialize(&ledger.read_contract_data_entries_by_contract_id(contract))?
         };
 
         Self::write_to_memory(caller, &read)
@@ -125,8 +130,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban.as_budget().reset_unlimited().unwrap();
 
             soroban.enable_debug().unwrap();
-            let scval = ScVal::try_from_val(&soroban, &val).unwrap();
-            Self::write_to_memory(caller, &scval.to_xdr(Limits::none()).unwrap())
+            let scval = ScVal::try_from_val(&soroban, &val).map_err(|_| HostError::SorobanHost)?;
+            Self::write_to_memory(caller, &scval.to_xdr(Limits::none())?)
         };
 
         res
@@ -143,7 +148,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let host_fn = {
             let memory = {
                 let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let vm = context
+                    .vm
+                    .as_ref()
+                    .ok_or_else(|| HostError::NoContext)?
+                    .upgrade()
+                    .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
                 let mem_manager = &vm.memory_manager;
 
                 mem_manager.memory
@@ -165,11 +175,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         ledger_info.network_id = host.0.network_id;
         ledger_info.max_entry_ttl = 3110400;
         let bucket_size: u64 = {
-            let string = std::fs::read_to_string("/tmp/currentbucketsize").unwrap(); // unrecoverable: todo handle this
-            string.parse().unwrap()
+            let string = std::fs::read_to_string("/tmp/currentbucketsize")?; // unrecoverable: todo handle this
+            string.parse()?
         };
-        let network_config =
-            NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size).unwrap();
+        let network_config = NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size)?;
         network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
 
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
@@ -182,10 +191,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             &source,
             [0; 32],
             true,
-        )
-        .unwrap();
+        )?;
 
-        Self::write_to_memory(caller, &bincode::serialize(&resp).unwrap())
+        Self::write_to_memory(caller, &bincode::serialize(&resp)?)
     }
 
     /// Reads contract entries to a memory slot on the Soroban Host environment.
@@ -210,7 +218,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
             let val = soroban
                 .with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
-                    let mut map = soroban.map_new().unwrap();
+                    let mut map = soroban.map_new()?;
 
                     for entry in data {
                         let LedgerEntryData::ContractData(d) = entry.entry.data else {
@@ -218,18 +226,17 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         };
 
                         if d.key != ScVal::LedgerKeyContractInstance {
-                            let key = soroban.to_valid_host_val(&d.key).unwrap();
-                            let val = soroban.to_valid_host_val(&d.val).unwrap();
+                            let key = soroban.to_valid_host_val(&d.key)?;
+                            let val = soroban.to_valid_host_val(&d.val)?;
 
-                            map = soroban.map_put(map, key, val).unwrap();
+                            map = soroban.map_put(map, key, val)?;
                         }
                     }
 
                     soroban.enable_debug().unwrap();
 
                     Ok(map.into())
-                })
-                .unwrap()
+                })?
                 .get_payload() as i64;
 
             (soroban, val)

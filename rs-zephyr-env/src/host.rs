@@ -3,6 +3,7 @@
 //! between the binary code executed within the VM and
 //! the implementor.
 
+use crate::error::InternalError;
 use crate::snapshot::snapshot_utils;
 use crate::soroban_host_gen::{self, build_u32val, with_frame, RelativeObjectConversion};
 use crate::{
@@ -151,7 +152,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
         let test_contract = Rc::new(ZephyrTestContract::new());
         let contract_id_bytes = [0; 32];
         let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
-        let contract_id = host.add_host_object(contract_address).unwrap();
+        let contract_id = host.add_host_object(contract_address)?;
 
         // Since Soroban's Host relies on a contract to give context to the execution actions
         // performed in the ZephyrVM are connected to a non-existing sample contract address.
@@ -183,7 +184,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
         let test_contract = Rc::new(ZephyrTestContract {});
         let contract_id_bytes = [0; 32];
         let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
-        let contract_id = host.add_host_object(contract_address).unwrap();
+        let contract_id = host.add_host_object(contract_address)?;
 
         // Since Soroban's Host relies on a contract to give context to the execution actions
         // performed in the ZephyrVM are connected to a non-existing sample contract address.
@@ -316,15 +317,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let host = caller.data();
         let ledger_close_meta = {
             let current = host.0.latest_close.borrow();
-
-            if current.is_none() {
-                return Err(HostError::NoLedgerCloseMeta.into());
-            }
-
-            current.clone().unwrap() // this is unsafe and can easily break the execution
-                                     // we should either not make the close meta an option
-                                     // or handle the error here and return the error to
-                                     // the guest.
+            current
+                .clone()
+                .ok_or_else(|| HostError::NoLedgerCloseMeta)?
         };
 
         Self::write_to_memory(caller, ledger_close_meta.as_slice())
@@ -338,7 +333,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let message = {
             let memory = {
                 let context = host.0.context.borrow();
-                let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                let vm = context
+                    .vm
+                    .as_ref()
+                    .ok_or_else(|| HostError::NoContext)?
+                    .upgrade()
+                    .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
                 let mem_manager = &vm.memory_manager;
 
                 mem_manager.memory
@@ -356,22 +356,29 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Ok(())
     }
 
-    fn write_result(caller: Caller<Self>, offset: i64, size: i64) {
+    fn write_result(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
         let host = caller.data();
 
         let memory = {
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let vm = context
+                .vm
+                .as_ref()
+                .ok_or_else(|| HostError::NoContext)?
+                .upgrade()
+                .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
             let mem_manager = &vm.memory_manager;
 
             mem_manager.memory
         };
 
         let segment = (offset, size);
-        let seg = Self::read_segment_from_memory(&memory, &caller, segment).unwrap();
-        let res: String = bincode::deserialize(&seg).unwrap();
+        let seg = Self::read_segment_from_memory(&memory, &caller, segment)?;
+        let res: String = bincode::deserialize(&seg)?;
 
         host.0.result.borrow_mut().push_str(&res);
+
+        Ok(())
     }
 
     /// Read a result string potentially written from the guest environment.
@@ -610,7 +617,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let host: &Self = caller.data();
                     let memory = {
                         let context = host.0.context.borrow();
-                        let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+                        let vm = context
+                            .vm
+                            .as_ref()
+                            .ok_or_else(|| HostError::NoContext)
+                            .unwrap()
+                            .upgrade()
+                            .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))
+                            .unwrap();
                         let mem_manager = &vm.memory_manager;
 
                         mem_manager.memory
@@ -657,7 +671,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let conclude_fn = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
-                Host::write_result(caller, offset, size);
+                Host::write_result(caller, offset, size).unwrap();
             });
 
             FunctionInfo {

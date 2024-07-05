@@ -9,6 +9,11 @@
 pub mod database;
 pub mod symbol;
 
+use crate::{
+    host::{utils, Host},
+    vm::Vm,
+    ZephyrMock,
+};
 use anyhow::Result as AnyResult;
 use database::{LedgerReader, MercuryDatabase};
 use postgres::NoTls;
@@ -16,12 +21,19 @@ use rs_zephyr_common::RelayedMessageRequest;
 use std::{fs::File, io::Read, rc::Rc};
 use symbol::Symbol;
 use tokio::task::JoinError;
-//use database::{LedgerReader, MercuryDatabase};
-use crate::{
-    host::{utils, Host},
-    vm::Vm,
-    ZephyrMock,
-};
+
+#[derive(Default)]
+pub struct TestHost;
+
+impl TestHost {
+    pub fn database(&self, path: &str) -> MercuryDatabaseSetup {
+        MercuryDatabaseSetup::setup_local(path)
+    }
+
+    pub fn new_program(&self, wasm_path: &str) -> TestVM {
+        TestVM::import(wasm_path)
+    }
+}
 
 pub fn read_wasm(path: &str) -> Vec<u8> {
     // todo: make this a compile-time macro.
@@ -32,39 +44,54 @@ pub fn read_wasm(path: &str) -> Vec<u8> {
     binary.to_vec()
 }
 
-pub async fn invoke_vm(path: String) -> Result<AnyResult<()>, JoinError> {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let invocation = tokio::runtime::Handle::current()
-        .spawn_blocking(move || {
-            let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
-            let vm = Vm::new(&host, &read_wasm(&path)).unwrap();
-            host.load_context(Rc::downgrade(&vm)).unwrap();
-            host.add_transmitter(tx);
-            println!("About to metered call");
-            vm.metered_call(&host)
+pub struct TestVM {
+    wasm_path: String,
+}
+
+impl TestVM {
+    pub fn import(path: &str) -> Self {
+        Self {
+            wasm_path: path.to_string(),
+        }
+    }
+
+    pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<String>, JoinError> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let fname = fname.to_string();
+        let wasm_path = self.wasm_path.clone();
+
+        let invocation = tokio::runtime::Handle::current()
+            .spawn_blocking(move || {
+                let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
+                let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
+                host.load_context(Rc::downgrade(&vm)).unwrap();
+                host.add_transmitter(tx);
+
+                vm.metered_function_call(&host, &fname)
+            })
+            .await;
+
+        let _ = tokio::spawn(async move {
+            while let Some(message) = rx.recv().await {
+                println!("Received message");
+                let request: RelayedMessageRequest = bincode::deserialize(&message).unwrap();
+
+                match request {
+                    RelayedMessageRequest::Http(_) => {
+                        // Note: http testing needs more thought since it's less rigorous
+                        // than DB testing.
+                    }
+
+                    RelayedMessageRequest::Log(log) => {
+                        println!("{:?}", log);
+                    }
+                }
+            }
         })
         .await;
 
-    let _ = tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            println!("Received message");
-            let request: RelayedMessageRequest = bincode::deserialize(&message).unwrap();
-
-            match request {
-                RelayedMessageRequest::Http(request) => {
-                    // Note: http testing needs more thought since it's less rigorous
-                    // than DB testing.
-                }
-
-                RelayedMessageRequest::Log(log) => {
-                    println!("{:?}", log);
-                }
-            }
-        }
-    })
-    .await;
-
-    invocation
+        invocation
+    }
 }
 
 pub struct MercuryDatabaseSetup {
@@ -88,7 +115,7 @@ impl Column {
 }
 
 impl MercuryDatabaseSetup {
-    pub async fn setup_local(dir: &str) -> Self {
+    pub fn setup_local(dir: &str) -> Self {
         Self {
             dir: dir.to_string(),
             tables: vec![],

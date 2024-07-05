@@ -1,6 +1,9 @@
-use std::{env, sync::Arc, time::Duration};
+use std::{env, sync::Arc};
 
-use ingestion_event_catchup::{caching::CacheClient, jobs_manager::JobsManager, ExecutionMode, ExecutionWrapper, FunctionRequest, InvokeZephyrFunction};
+use ingestion_event_catchup::{
+    caching::CacheClient, jobs_manager::JobsManager, ExecutionMode, ExecutionWrapper,
+    FunctionRequest, InvokeZephyrFunction,
+};
 use serde_json::json;
 use warp::{reject::Rejection, reply::WithStatus, Filter};
 
@@ -34,7 +37,7 @@ async fn main() {
                     return Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
                         "No program avalable".into(),
                         warp::http::StatusCode::BAD_REQUEST,
-                    ))
+                    ));
                 }
                 let resp = resp.unwrap();
 
@@ -43,19 +46,20 @@ async fn main() {
 
                     format!("catchup {} in progress", job_idx)
                 } else {
-                    let response = resp.await.unwrap_or(json!({"error": "code execution trapped."}).to_string());
+                    let response = resp
+                        .await
+                        .unwrap_or(json!({"error": "code execution trapped."}).to_string());
 
-                    if let ExecutionMode::Function(InvokeZephyrFunction {fname, ..}) = body.mode {
+                    if let ExecutionMode::Function(InvokeZephyrFunction { fname, .. }) = body.mode {
                         if fname == "dashboard" {
                             let cache = CacheClient::new();
                             let res = cache.insert_or_update(body.binary_id, &response);
                             println!("Inserting {:?}", res);
                         }
                     }
-                    
+
                     response
                 };
-
                 Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
                     resp,
                     warp::http::StatusCode::OK,
@@ -67,25 +71,6 @@ async fn main() {
         .and(warp::get())
         .and(with_store(manager.clone()))
         .and_then(|program: u32, _: Arc<JobsManager>| async move {
-            /*let handle = tokio::spawn(async move {
-                let execution =
-                    ExecutionWrapper::new(FunctionRequest::dashboard(program, id), env::var("NETWORK").unwrap());
-                let resp = execution.catchup_spawn_jobs().await;
-
-                resp
-            });
-
-            let resp = handle.await.unwrap();
-                if resp.is_err() {
-                    return Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
-                        "No program avalable".into(),
-                        warp::http::StatusCode::BAD_REQUEST,
-                    ))
-                }
-            let resp = resp.unwrap();
-
-            let resp = resp.await.unwrap_or("failed".into());*/
-                
             let cache = CacheClient::new();
             let result = cache.get_cahched(program);
 
@@ -97,7 +82,7 @@ async fn main() {
                 Err(error) => Ok::<WithStatus<String>, Rejection>(warp::reply::with_status(
                     format!("Error in retrieving the dashboard {:?}", error),
                     warp::http::StatusCode::BAD_REQUEST,
-                )) 
+                )),
             }
         });
 

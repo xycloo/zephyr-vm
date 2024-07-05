@@ -4,9 +4,12 @@ use anyhow::Result;
 use rs_zephyr_common::DatabaseError;
 use wasmi::Caller;
 
-use crate::db::{
-    database::{DatabasePermissions, WhereCond, ZephyrDatabase},
-    ledger::LedgerStateRead,
+use crate::{
+    db::{
+        database::{DatabasePermissions, WhereCond, ZephyrDatabase},
+        ledger::LedgerStateRead,
+    },
+    error::{HostError, InternalError},
 };
 
 use super::{utils, Host};
@@ -52,7 +55,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             };
 
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let vm = context
+                .vm
+                .as_ref()
+                .ok_or_else(|| HostError::NoContext)?
+                .upgrade()
+                .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
             let mem_manager = &vm.memory_manager;
             stack_impl.0.clear();
 
@@ -161,7 +169,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             };
 
             let context = host.0.context.borrow();
-            let vm = context.vm.as_ref().unwrap().upgrade().unwrap();
+            let vm = context
+                .vm
+                .as_ref()
+                .ok_or_else(|| HostError::NoContext)?
+                .upgrade()
+                .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
             let mem_manager = &vm.memory_manager;
 
             stack_impl.0.clear();
