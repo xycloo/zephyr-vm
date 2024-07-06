@@ -23,7 +23,7 @@ pub mod vm_context;
 
 use anyhow::Result;
 
-#[cfg(test)]
+#[cfg(feature = "testutils")]
 pub mod testutils;
 
 #[cfg(test)]

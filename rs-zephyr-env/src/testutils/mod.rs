@@ -16,26 +16,30 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use database::{LedgerReader, MercuryDatabase};
+use ledger_meta_factory::Transition;
 use postgres::NoTls;
 use rs_zephyr_common::RelayedMessageRequest;
 use std::{fs::File, io::Read, rc::Rc};
 use symbol::Symbol;
 use tokio::task::JoinError;
 
+/// Zephyr testing utility object.
 #[derive(Default)]
 pub struct TestHost;
 
 impl TestHost {
+    /// Get a handle to the local db worker.
     pub fn database(&self, path: &str) -> MercuryDatabaseSetup {
         MercuryDatabaseSetup::setup_local(path)
     }
 
+    /// Return a testing ZephyrVM.
     pub fn new_program(&self, wasm_path: &str) -> TestVM {
         TestVM::import(wasm_path)
     }
 }
 
-pub fn read_wasm(path: &str) -> Vec<u8> {
+pub(crate) fn read_wasm(path: &str) -> Vec<u8> {
     // todo: make this a compile-time macro.
     let mut file = File::open(path).unwrap();
     let mut binary = Vec::new();
@@ -44,21 +48,33 @@ pub fn read_wasm(path: &str) -> Vec<u8> {
     binary.to_vec()
 }
 
+/// Testing utility object representing the Zephyr Virtual Machine.
 pub struct TestVM {
     wasm_path: String,
+    ledger_close_meta: Option<Vec<u8>>
 }
 
 impl TestVM {
+    /// Creates a testing ZephyrVM object from a WASM binary path.
     pub fn import(path: &str) -> Self {
         Self {
             wasm_path: path.to_string(),
+            ledger_close_meta: None
         }
     }
 
+    /// Sets a new ledger transition XDR or replaces the existing one.
+    pub fn set_transition(&mut self, transition: Transition) {
+        let meta = transition.to_bytes();
+        self.ledger_close_meta = Some(meta)
+    } 
+
+    /// Invokes the selected function exported by the current ZephyrVM.
     pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<String>, JoinError> {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let fname = fname.to_string();
         let wasm_path = self.wasm_path.clone();
+        let meta = self.ledger_close_meta.clone();
 
         let invocation = tokio::runtime::Handle::current()
             .spawn_blocking(move || {
@@ -66,6 +82,10 @@ impl TestVM {
                 let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
                 host.load_context(Rc::downgrade(&vm)).unwrap();
                 host.add_transmitter(tx);
+
+                if let Some(meta) = meta {
+                    host.add_ledger_close_meta(meta).unwrap();
+                };
 
                 vm.metered_function_call(&host, &fname)
             })
@@ -146,11 +166,12 @@ impl MercuryDatabaseSetup {
     pub async fn load_table(
         &mut self,
         id: i64,
-        symbol: Symbol,
-        columns: Vec<Column>,
+        name: impl ToString,
+        columns: Vec<impl ToString>,
     ) -> anyhow::Result<()> {
         let id = utils::bytes::i64_to_bytes(id);
-        let bytes = utils::bytes::i64_to_bytes(symbol.0 as i64);
+        let name_symbol = Symbol::try_from_bytes(name.to_string().as_bytes()).unwrap();
+        let bytes = utils::bytes::i64_to_bytes(name_symbol.0 as i64);
         let table_name = format!(
             "zephyr_{}",
             hex::encode::<[u8; 16]>(md5::compute([bytes, id].concat()).into()).as_str()
@@ -171,6 +192,7 @@ impl MercuryDatabaseSetup {
         let mut new_table_stmt = String::from(&format!("CREATE TABLE {} (", table_name));
 
         for (index, column) in columns.iter().enumerate() {
+            let column = Column::with_name(column);
             new_table_stmt.push_str(&format!("{} {}", column.name, column.col_type));
 
             if index < columns.len() - 1 {

@@ -5,25 +5,22 @@ edition = "2021"
 
 [dependencies]
 wasmi = { version = "0.31.1" }
-# wasmtime = "16.0.0"
 anyhow = "1.0.75"
 thiserror = "1.0.48"
 sha2 = "0.10.8"
 postgres = {version="0.19.7", features=["with-serde_json-1"], optional = true}
+tokio-postgres = { version = "0.7.10", optional = true }
 postgres-types = { version = "0.2.6", features = ["derive", "with-chrono-0_4", "with-time-0_3"], optional = true }
 bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.7.0"
 rs-zephyr-common = {path="../rs-zephyr-common"}
-#stellar-xdr = { version = "20.1.0", default-features = false, features=["next", "curr", "serde", "base64"] }
 tokio = {version = "1.0", features = ["full"]}
 log = "0.4.20"
 rusqlite = "0.31.0"
 stellar-strkey = "0.0.8"
 hex = "0.4.3"
-
-[dev-dependencies]
-tokio-postgres = "0.7.10"
+ledger-meta-factory = {path = "../ledger-meta-factory", optional = true}
 
 [dependencies.soroban-simulation]
 path = "../../rs-soroban-env/soroban-simulation"
@@ -45,4 +42,4 @@ path = "../../rs-soroban-env/soroban-env-macros"
 [features]
 default = ["testutils"]
 host_only = []
-testutils = ["dep:postgres", "dep:postgres-types"]
+testutils = ["dep:postgres", "dep:tokio-postgres", "dep:postgres-types", "dep:ledger-meta-factory"]

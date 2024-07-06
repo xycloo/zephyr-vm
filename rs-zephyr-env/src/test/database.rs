@@ -4,7 +4,7 @@
 //! `cargo test -- --exact --nocapture --test-threads 1`
 //!
 
-use crate::testutils::{symbol::Symbol, Column, MercuryDatabaseSetup, TestHost};
+use crate::testutils::{symbol::Symbol, MercuryDatabaseSetup, TestHost};
 
 #[tokio::test]
 async fn tables_manager() {
@@ -13,8 +13,8 @@ async fn tables_manager() {
     let created = dbsetup
         .load_table(
             0,
-            Symbol::try_from_bytes("hello".as_bytes()).unwrap(),
-            vec![Column::with_name(&"tdep")],
+            "hello",
+            vec!["tdep"],
         )
         .await;
 
@@ -33,8 +33,8 @@ async fn write_read() {
     let created = dbsetup
         .load_table(
             0,
-            Symbol::try_from_bytes("hello".as_bytes()).unwrap(),
-            vec![Column::with_name(&"tdep")],
+            "hello",
+            vec!["tdep"],
         )
         .await;
 
@@ -80,8 +80,8 @@ async fn write_update_read() {
     let created = dbsetup
         .load_table(
             0,
-            Symbol::try_from_bytes("hello".as_bytes()).unwrap(),
-            vec![Column::with_name(&"tdep")],
+            "hello",
+            vec!["tdep"],
         )
         .await;
 
