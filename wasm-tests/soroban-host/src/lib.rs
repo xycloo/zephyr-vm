@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 use zephyr_sdk::{
     prelude::*,
     soroban_sdk::{Bytes, BytesN, String as SorobanString, Symbol},
@@ -14,4 +16,5 @@ pub extern "C" fn on_close() {
     let vec = bytes.to_alloc_vec();
     let bytesn = BytesN::from_array(&env.soroban(), &[32; 32]);
     let mut vec = [0; 32];
+    bytesn.copy_into_slice(&mut vec);
 }

@@ -4,19 +4,13 @@
 //! `cargo test -- --exact --nocapture --test-threads 1`
 //!
 
-use crate::testutils::{symbol::Symbol, MercuryDatabaseSetup, TestHost};
+use crate::testutils::{MercuryDatabaseSetup, TestHost};
 
 #[tokio::test]
 async fn tables_manager() {
     let mut dbsetup =
         MercuryDatabaseSetup::setup_local("postgres://postgres:postgres@localhost:5432");
-    let created = dbsetup
-        .load_table(
-            0,
-            "hello",
-            vec!["tdep"],
-        )
-        .await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
 
     assert!(created.is_ok());
 
@@ -30,34 +24,16 @@ async fn write_read() {
     let mut dbsetup = env.database("postgres://postgres:postgres@localhost:5432");
     let program = env.new_program("../target/wasm32-unknown-unknown/release/db_write_read.wasm");
 
-    let created = dbsetup
-        .load_table(
-            0,
-            "hello",
-            vec!["tdep"],
-        )
-        .await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
 
     assert!(created.is_ok());
-    assert_eq!(
-        dbsetup
-            .get_rows_number(0, Symbol::try_from_bytes("hello".as_bytes()).unwrap())
-            .await
-            .unwrap(),
-        0
-    );
+    assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 0);
 
     let invocation = program.invoke_vm("on_close").await;
     assert!(invocation.is_ok());
     let invocation = invocation.unwrap();
     assert!(invocation.is_ok());
-    assert_eq!(
-        dbsetup
-            .get_rows_number(0, Symbol::try_from_bytes("hello".as_bytes()).unwrap())
-            .await
-            .unwrap(),
-        1
-    );
+    assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 1);
 
     let invocation = program.invoke_vm("on_close").await;
     // Note:
@@ -77,34 +53,16 @@ async fn write_update_read() {
     let program =
         env.new_program("../target/wasm32-unknown-unknown/release/db_write_update_read.wasm");
 
-    let created = dbsetup
-        .load_table(
-            0,
-            "hello",
-            vec!["tdep"],
-        )
-        .await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
 
     assert!(created.is_ok());
-    assert_eq!(
-        dbsetup
-            .get_rows_number(0, Symbol::try_from_bytes("hello".as_bytes()).unwrap())
-            .await
-            .unwrap(),
-        0
-    );
+    assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 0);
 
     let invocation = program.invoke_vm("on_close").await;
     assert!(invocation.is_ok());
     let invocation = invocation.unwrap();
     assert!(invocation.is_ok());
-    assert_eq!(
-        dbsetup
-            .get_rows_number(0, Symbol::try_from_bytes("hello".as_bytes()).unwrap())
-            .await
-            .unwrap(),
-        1
-    );
+    assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 1);
 
     let invocation = program.invoke_vm("on_close").await;
     // Note:

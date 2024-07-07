@@ -9,6 +9,7 @@ use crate::{ZephyrMock, ZephyrStandard};
 use anyhow::Result;
 use rs_zephyr_common::DatabaseError;
 
+/// Allowed column conditions
 pub enum WhereCond {
     /// Where column i64 is equal to the corresponding condition
     /// argument.

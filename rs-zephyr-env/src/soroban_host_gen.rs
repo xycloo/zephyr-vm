@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+//use std::fmt::Debug;
 
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},
@@ -119,6 +119,7 @@ macro_rules! impl_relative_object_conversion {
     };
 }
 
+/*
 enum TraceArg<T: Debug> {
     Bad(i64),
     Ok(T),
@@ -155,6 +156,7 @@ macro_rules! homogenize_tuple {
         &[&$u.0, &$u.1, &$u.2, &$u.3, &$u.4]
     };
 }
+*/
 
 // Define a relative-to-absolute impl for any type that is (a) mentioned
 // in a host function type signature in env and (b) might possibly carry an
@@ -252,13 +254,13 @@ macro_rules! generate_dispatch_functions {
                 // expansion, flattening all functions from all 'mod' blocks
                 // into a set of functions.
                 $(#[$fn_attr])*
-                pub(crate) fn $fn_id<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static>(mut caller: wasmi::Caller<Host<DB, L>>, $($arg:i64),*) ->
+                pub(crate) fn $fn_id<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static>(caller: wasmi::Caller<Host<DB, L>>, $($arg:i64),*) ->
                     (i64,)
                 {
                     //let _span = tracy_span!(core::stringify!($fn_id));
 
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    host.enable_debug();
+                    let _ = host.enable_debug();
 
                     let effects = || -> Result<_, HostError> {
                         // This is an additional protocol version guardrail that

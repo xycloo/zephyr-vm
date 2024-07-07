@@ -6,8 +6,8 @@
 //! unlike VMs such as the Soroban VM were cross-host calls are allowed through spawning a new
 //! VM to execute the binaries.
 //!
-pub mod database;
-pub mod symbol;
+pub(crate) mod database;
+pub(crate) mod symbol;
 
 use crate::{
     host::{utils, Host},
@@ -51,7 +51,7 @@ pub(crate) fn read_wasm(path: &str) -> Vec<u8> {
 /// Testing utility object representing the Zephyr Virtual Machine.
 pub struct TestVM {
     wasm_path: String,
-    ledger_close_meta: Option<Vec<u8>>
+    ledger_close_meta: Option<Vec<u8>>,
 }
 
 impl TestVM {
@@ -59,7 +59,7 @@ impl TestVM {
     pub fn import(path: &str) -> Self {
         Self {
             wasm_path: path.to_string(),
-            ledger_close_meta: None
+            ledger_close_meta: None,
         }
     }
 
@@ -67,7 +67,7 @@ impl TestVM {
     pub fn set_transition(&mut self, transition: Transition) {
         let meta = transition.to_bytes();
         self.ledger_close_meta = Some(meta)
-    } 
+    }
 
     /// Invokes the selected function exported by the current ZephyrVM.
     pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<String>, JoinError> {
@@ -114,13 +114,16 @@ impl TestVM {
     }
 }
 
+/// Database handler object.
+/// Connects in a user-friendly way the user with their local
+/// postgres database.
 pub struct MercuryDatabaseSetup {
     dir: String,
     tables: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Column {
+pub(crate) struct Column {
     name: String,
     col_type: String,
 }
@@ -135,6 +138,7 @@ impl Column {
 }
 
 impl MercuryDatabaseSetup {
+    /// Instantiate a new db object.
     pub fn setup_local(dir: &str) -> Self {
         Self {
             dir: dir.to_string(),
@@ -142,9 +146,11 @@ impl MercuryDatabaseSetup {
         }
     }
 
-    pub async fn get_rows_number(&self, id: i64, symbol: Symbol) -> anyhow::Result<usize> {
+    /// Get the number of rows of a zephyr table.    
+    pub async fn get_rows_number(&self, id: i64, name: impl ToString) -> anyhow::Result<usize> {
         let id = utils::bytes::i64_to_bytes(id);
-        let bytes = utils::bytes::i64_to_bytes(symbol.0 as i64);
+        let name_symbol = Symbol::try_from_bytes(name.to_string().as_bytes()).unwrap();
+        let bytes = utils::bytes::i64_to_bytes(name_symbol.0 as i64);
         let table_name = format!(
             "zephyr_{}",
             hex::encode::<[u8; 16]>(md5::compute([bytes, id].concat()).into()).as_str()
@@ -163,6 +169,7 @@ impl MercuryDatabaseSetup {
         Ok(resp.len())
     }
 
+    /// Create a new ephemeral zephyr table on the local postgres database.
     pub async fn load_table(
         &mut self,
         id: i64,
@@ -206,6 +213,7 @@ impl MercuryDatabaseSetup {
         Ok(())
     }
 
+    /// Close the connection and drop all the ephemeral tables created during the execution.
     pub async fn close(&self) {
         let tables = &self.tables;
         for table_name in tables.clone() {

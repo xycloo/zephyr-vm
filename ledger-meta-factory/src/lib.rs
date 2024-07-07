@@ -5,8 +5,8 @@ use stellar_xdr::next::{
     Operation, OperationMeta, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
     SorobanTransactionMeta, SorobanTransactionMetaExt, TimePoint, Transaction, TransactionEnvelope,
     TransactionMeta, TransactionMetaV3, TransactionPhase, TransactionResult, TransactionResultExt,
-    TransactionResultMeta, TransactionResultPair, TransactionResultResult, TransactionSetV1,
-    TransactionV1Envelope, TxSetComponent, TxSetComponentTxsMaybeDiscountedFee, Uint256, WriteXdr,
+    TransactionResultMeta, TransactionResultPair, TransactionResultResult, TransactionV1Envelope,
+    TxSetComponent, TxSetComponentTxsMaybeDiscountedFee, Uint256, WriteXdr,
 };
 
 mod ledger;

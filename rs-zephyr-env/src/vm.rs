@@ -131,7 +131,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
             None => return Err(HostError::ExternNotAFunction.into()),
         };
 
-        println!("\nrunning function\n");
         func.call(
             &mut *store.borrow_mut(),
             entry_point_info.params.as_slice(),

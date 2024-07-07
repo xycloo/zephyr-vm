@@ -1,4 +1,4 @@
-use std::{env, rc::Rc};
+use std::rc::Rc;
 
 use rusqlite::{params, Connection};
 use snapshot_utils::get_ttl;

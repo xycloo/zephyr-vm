@@ -21,15 +21,15 @@ pub struct LedgerReader {}
 impl LedgerStateRead for LedgerReader {
     fn read_contract_data_entry_by_contract_id_and_key(
         &self,
-        contract: soroban_env_host::xdr::ScAddress,
-        key: soroban_env_host::xdr::ScVal,
+        _contract: soroban_env_host::xdr::ScAddress,
+        _key: soroban_env_host::xdr::ScVal,
     ) -> Option<ContractDataEntry> {
         None
     }
 
     fn read_contract_data_entries_by_contract_id(
         &self,
-        contract: soroban_env_host::xdr::ScAddress,
+        _contract: soroban_env_host::xdr::ScAddress,
     ) -> Vec<ContractDataEntry> {
         vec![]
     }
@@ -171,6 +171,7 @@ impl ZephyrDatabase for MercuryDatabase {
             println!("{:?}", connection.err().unwrap());
             return Err(DatabaseError::ZephyrQueryError);
         };
+
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         let mut types = Vec::new();
 
@@ -214,13 +215,15 @@ impl ZephyrDatabase for MercuryDatabase {
             types.push(Type::BYTEA)
         }
 
-        let statement = if let Ok(stmt) = client.prepare_typed(&query, &types) {
+        let prepared = client.prepare_typed(&query, &types);
+        let statement = if let Ok(stmt) = prepared {
             stmt
         } else {
             return Err(DatabaseError::WriteError);
         };
 
-        if let Ok(_) = client.execute(&statement, &params) {
+        let insert = client.execute(&statement, &params);
+        if let Ok(_) = insert {
             Ok(())
         } else {
             Err(DatabaseError::WriteError)

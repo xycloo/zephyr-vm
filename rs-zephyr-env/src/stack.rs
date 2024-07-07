@@ -9,6 +9,7 @@ use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 /// Stack implementation.
 #[derive(Clone)]
 pub struct StackImpl {
+    /// Inner stack vector.
     pub inner: RefCell<Vec<i64>>,
     step: RefCell<usize>,
 }
