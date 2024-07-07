@@ -11,6 +11,7 @@ use stellar_xdr::next::{
 
 mod ledger;
 
+#[derive(Debug, Clone)]
 pub struct TransitionPretty {
     pub inner: Transition,
 }
@@ -45,6 +46,7 @@ impl TransitionPretty {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Transition {
     meta: LedgerCloseMeta,
 }
