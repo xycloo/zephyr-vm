@@ -2,6 +2,12 @@
 name = "ledger-meta-factory"
 version = "0.1.0"
 edition = "2021"
+authors = ["Tommaso De Ponti @ xyclooLabs <tommaso@xycloo.com>"]
+description = "Utility for building customized Stellar ledger transitions."
+documentation = "https://docs.mercurydata.app/"
+homepage = "https://mercurydata.app/zephyr-vm/"
+keywords = ["stellar", "soroban", "blockchain"]
+license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
