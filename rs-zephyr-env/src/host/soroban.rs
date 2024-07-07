@@ -8,8 +8,7 @@ use anyhow::Result;
 use soroban_env_host::{
     budget::AsBudget,
     xdr::{
-        AccountId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress,
-        ScVal, Uint256, WriteXdr,
+        AccountId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr
     },
     Env, LedgerInfo, Symbol, TryFromVal, Val,
 };
