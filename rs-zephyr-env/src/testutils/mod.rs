@@ -1,5 +1,7 @@
 //! Utilities for testing Zephyr programs and the ZephyrVM.
 //!
+//! Note: the testutils modules are not meant for production use rather for local usage.
+//! 
 //! Note:
 //! Testing on the ZephyrVM is currently quite difficult as the host doesn't spawn VMs.
 //! A Zephyr host is completely contained by the executing VM and cannot spawn other VMs

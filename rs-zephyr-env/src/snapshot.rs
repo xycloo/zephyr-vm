@@ -1,3 +1,6 @@
+//! Snapshot utilites required to correctly perform tx simulation
+//! calculations.
+
 use std::rc::Rc;
 
 use rusqlite::{params, Connection};
