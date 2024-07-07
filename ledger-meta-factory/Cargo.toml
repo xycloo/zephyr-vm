@@ -19,6 +19,6 @@ features = ["alloc"]
 
 [dependencies.stellar-xdr]
 version = "=20.1.0"
-git = "https://github.com/stellar/rs-stellar-xdr"
-rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
+#git = "https://github.com/stellar/rs-stellar-xdr"
+#rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features=["next", "curr", "serde", "base64"]
