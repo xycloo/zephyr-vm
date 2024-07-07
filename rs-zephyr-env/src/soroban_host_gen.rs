@@ -350,7 +350,7 @@ macro_rules! generate_dispatch_functions {
 }
 
 // Here we invoke the x-macro passing generate_dispatch_functions as its callback macro.
-generate_call_macro_with_all_host_functions!("../soroban/env.json");
+generate_call_macro_with_all_host_functions!("env.json");
 
 call_macro_with_all_host_functions! { generate_dispatch_functions }
 
