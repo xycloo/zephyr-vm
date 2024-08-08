@@ -71,6 +71,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         // For now we use wasmtime's defaults.
         config.consume_fuel(true);
         config.set_stack_limits(stack_limits);
+        config.compilation_mode(wasmi::CompilationMode::Lazy);
 
         let engine = Engine::new(&config);
         let module = Module::new(&engine, wasm_module_code_bytes)?;

@@ -32,7 +32,7 @@ use std::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 use utils::soroban::ZephyrTestContract;
-use wasmi::{Caller, Func, Store, Value};
+use wasmi::{Caller, Func, Store, Val as Value};
 
 pub(crate) mod database;
 pub(crate) mod memory;

@@ -69,6 +69,6 @@ impl Budget {
         &self,
         store: &mut Store<Host<DB, L>>,
     ) -> Result<(), FuelError> {
-        store.add_fuel(self.0.borrow().limits.fuel)
+        store.set_fuel(self.0.borrow().limits.fuel)
     }
 }

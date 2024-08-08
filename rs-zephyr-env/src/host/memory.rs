@@ -7,6 +7,8 @@ use anyhow::{anyhow, Result};
 use soroban_env_host::vm::CustomContextVM;
 use wasmi::{core::Pages, Caller, Memory};
 
+const KEEP_FREE: usize = 16384;
+
 pub struct CustomVMCtx<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> {
     caller: Option<&'a Caller<'a, Host<DB, L>>>,
     caller_mut: Option<Caller<'a, Host<DB, L>>>,
@@ -109,16 +111,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             (memory, new_offset, contents)
         };
 
-        // TODO: this should actually only grow the linear memory when needed, so check the current
-        // pages and the size of the contents to compute a safe pages size (else error with a growth error).
-        // That said, the program cannot grow unbounded since Memory::grow throws an error in that case.
-        let _ = memory.grow(&mut caller, Pages::new(1000).unwrap());
+        Self::grow_memory_pages_if_needed(memory, &mut caller, data.len());
 
-        if let Err(error) = memory.write(&mut caller, offset, data) {
+        println!("writing to offset and memory {}", data.len());
+        if let Err(error) = memory.write(&mut caller, data.len(), data) {
             return Err(anyhow!(error));
         };
 
-        Ok((offset as i64, data.len() as i64))
+        Ok((data.len() as i64, data.len() as i64))
     }
 
     pub(crate) fn write_to_memory_mut(
@@ -127,7 +127,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         contents: &[u8],
     ) -> Result<i64> {
         let memory = Self::get_memory(caller);
-
+        Self::grow_memory_pages_if_needed(memory, caller, contents.len());
+        
         if let Err(error) = memory.write(caller, pos as usize, contents) {
             return Err(anyhow!(error));
         };
@@ -146,5 +147,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         }
 
         Ok(written_vec)
+    }
+
+    pub(crate) fn grow_memory_pages_if_needed(memory: Memory, caller: &mut Caller<Self>, buf_len: usize) {
+        // Estimating free allocated memory.
+        let current_estimated_free = memory.data(&caller).iter().filter(|byte| **byte == 0x00_u8).count();
+        
+        if current_estimated_free < buf_len + KEEP_FREE {
+            let _ = memory.grow(caller, Pages::new(100).unwrap());
+        }
     }
 }
