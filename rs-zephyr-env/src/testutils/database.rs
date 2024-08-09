@@ -33,6 +33,10 @@ impl LedgerStateRead for LedgerReader {
     ) -> Vec<ContractDataEntry> {
         vec![]
     }
+
+    fn read_account(&self, account: String) -> Option<rs_zephyr_common::Account> {
+        None
+    }
 }
 
 impl ZephyrMock for LedgerReader {

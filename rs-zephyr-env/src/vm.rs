@@ -74,7 +74,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         config.compilation_mode(wasmi::CompilationMode::Lazy);
 
         let engine = Engine::new(&config);
-        let module = Module::new(&engine, wasm_module_code_bytes)?;
+        
+        // NOTE: This requires validation to occur upon deployment.
+        let module = unsafe {
+            Module::new_unchecked(&engine, wasm_module_code_bytes)?
+        };
 
         let mut store = Store::new(&engine, host.clone());
         if let Err(error) = host.as_budget().infer_fuel(&mut store) {

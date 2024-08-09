@@ -113,7 +113,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         Self::grow_memory_pages_if_needed(memory, &mut caller, data.len());
 
-        println!("writing to offset and memory {}", data.len());
         if let Err(error) = memory.write(&mut caller, data.len(), data) {
             return Err(anyhow!(error));
         };

@@ -5,8 +5,8 @@
 //! ledger.
 
 use anyhow::Result;
-use rs_zephyr_common::ContractDataEntry;
-use soroban_env_host::xdr::{ScAddress, ScVal};
+use rs_zephyr_common::{Account, ContractDataEntry};
+use soroban_env_host::xdr::{AccountEntry, ScAddress, ScVal};
 
 use crate::{ZephyrMock, ZephyrStandard};
 
@@ -33,6 +33,9 @@ pub trait LedgerStateRead {
         &self,
         contract: ScAddress,
     ) -> Vec<ContractDataEntry>;
+
+    /// Returns an account object for a certain public key.
+    fn read_account(&self, account: String) -> Option<Account>; 
 }
 
 /// Empty implementation for the host's ledger reader adapter.
