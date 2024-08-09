@@ -611,6 +611,37 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let read_account_from_ledger_fn = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<_>,
+                 account_part_1: i64,
+                 account_part_2: i64,
+                 account_part_3: i64,
+                 account_part_4: i64| {
+                    let account = WrappedMaxBytes::array_from_max_parts::<32>(&[
+                        account_part_1,
+                        account_part_2,
+                        account_part_3,
+                        account_part_4,
+                    ]);
+                    let result = Host::read_account_object(caller, account);
+
+                    if let Ok(res) = result {
+                        (ZephyrStatus::Success as i64, res.0, res.1)
+                    } else {
+                        (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                    }
+                },
+            );
+
+            FunctionInfo {
+                module: "env",
+                func: "read_account_from_ledger",
+                wrapped,
+            }
+        };
+
         let scval_to_valid_host_val = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
                 let bytes = {
@@ -1136,6 +1167,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban_simulate_tx_fn,
             bytes_copy_to_linear_memory_mem,
             db_read_as_id_fn,
+            read_account_from_ledger_fn
         ];
 
         soroban_functions.append(&mut arr);

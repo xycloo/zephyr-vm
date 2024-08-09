@@ -98,6 +98,23 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Self::write_to_memory(caller, &read)
     }
 
+    pub(crate) fn read_account_object(
+        caller: Caller<Self>,
+        account: [u8; 32],
+    ) -> Result<(i64, i64)> {
+        let host = caller.data();
+        let account = stellar_strkey::ed25519::PublicKey(account).to_string();
+        
+        let read = {
+            let ledger = &host.0.ledger.0.ledger;
+            bincode::serialize(
+                &ledger.read_account(account),
+            )?
+        };
+
+        Self::write_to_memory(caller, &read)
+    }
+
     pub(crate) fn scval_to_valid_host_val(caller: Caller<Self>, scval: &ScVal) -> Result<i64> {
         let host = caller.data();
 
