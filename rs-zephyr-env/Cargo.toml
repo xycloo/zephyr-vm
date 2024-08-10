@@ -1,6 +1,6 @@
 [package]
 name = "zephyr-vm"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Tommaso De Ponti @ xyclooLabs <tommaso@xycloo.com>"]
 description = "The first Blockchain data focused cloud computing web assembly virtual machine. Currently on Stellar."
@@ -21,7 +21,7 @@ bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.7.0"
 
-rs-zephyr-common = { version = "0.1.4" }
+rs-zephyr-common = { version = "0.1.5" }
 #rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
 
 tokio = {version = "1.0", features = ["full"]}
@@ -34,10 +34,10 @@ ledger-meta-factory = {version = "0.1.0", path = "../ledger-meta-factory", optio
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
 path = "../../rs-soroban-env/soroban-simulation"
-version = "21.0.3"
+version = "21.2.0"
 
 [dependencies.stellar-xdr]
-version = "=20.1.0"
+version = "=21.2.0"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features=["next", "curr", "serde", "base64"]
@@ -45,13 +45,13 @@ features=["next", "curr", "serde", "base64"]
 [dependencies.soroban-env-host]
 package = "soroban-env-host-zephyr"
 path = "../../rs-soroban-env/soroban-env-host"
-version = "21.0.3"
+version = "21.2.0"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
 path = "../../rs-soroban-env/soroban-env-macros"
-version = "21.0.3"
+version = "21.2.0"
 
 [features]
 default = ["testutils"]
