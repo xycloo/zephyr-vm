@@ -19,12 +19,12 @@ anyhow = "1.0.75"
 zephyr-sdk = { path = "../../rs-zephyr-sdk/zephyr-sdk" }
 
 [dev-dependencies.soroban-sdk]
-version = "20.0.5"
+version = "21.5.0"
 features = ["alloc"]
 
 
 [dependencies.stellar-xdr]
-version = "=20.1.0"
+version = "=21.2.0"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features=["next", "curr", "serde", "base64"]

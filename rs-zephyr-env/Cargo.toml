@@ -1,6 +1,6 @@
 [package]
 name = "zephyr-vm"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Tommaso De Ponti @ xyclooLabs <tommaso@xycloo.com>"]
 description = "The first Blockchain data focused cloud computing web assembly virtual machine. Currently on Stellar."
@@ -20,6 +20,11 @@ postgres-types = { version = "0.2.6", features = ["derive", "with-chrono-0_4", "
 bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.7.0"
+
+reqwest = { version = "0.12.5", features = ["json"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+rand = "0.8.5"
 
 rs-zephyr-common = { version = "0.1.5" }
 #rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
@@ -53,7 +58,8 @@ package = "soroban-env-macros-zephyr"
 path = "../../rs-soroban-env/soroban-env-macros"
 version = "21.2.0"
 
+
 [features]
 default = ["testutils"]
 host_only = []
-testutils = ["dep:postgres", "dep:tokio-postgres", "dep:postgres-types", "dep:ledger-meta-factory"]
+testutils = ["dep:postgres", "dep:tokio-postgres", "dep:postgres-types", "dep:ledger-meta-factory", "dep:reqwest", "dep:serde_json"]

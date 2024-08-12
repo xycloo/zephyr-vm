@@ -20,8 +20,9 @@ use anyhow::Result as AnyResult;
 use database::{LedgerReader, MercuryDatabase};
 use ledger_meta_factory::Transition;
 use postgres::NoTls;
-use rs_zephyr_common::RelayedMessageRequest;
-use std::{fs::File, io::Read, rc::Rc};
+use reqwest::{header::{HeaderMap, HeaderName}, Client};
+use rs_zephyr_common::{http::Method, RelayedMessageRequest};
+use std::{fs::File, io::Read, rc::Rc, str::FromStr};
 use symbol::Symbol;
 use tokio::task::JoinError;
 
@@ -94,20 +95,52 @@ impl TestVM {
             .await;
 
         let _ = tokio::spawn(async move {
+            let mut handles = Vec::new();
             while let Some(message) = rx.recv().await {
-                println!("Received message");
                 let request: RelayedMessageRequest = bincode::deserialize(&message).unwrap();
-
                 match request {
-                    RelayedMessageRequest::Http(_) => {
-                        // Note: http testing needs more thought since it's less rigorous
-                        // than DB testing.
-                    }
+                    RelayedMessageRequest::Http(request) => {
+                        let handle = tokio::spawn(async move {
+                            let client = Client::new();
+                            let mut headers = HeaderMap::new();
+                            for (k, v) in &request.headers {
+                                headers
+                                    .insert(HeaderName::from_str(&k).unwrap(), v.parse().unwrap());
+                            }
+                            let builder = match request.method {
+                                Method::Get => {
+                                    let builder = client.get(&request.url).headers(headers);
 
+                                    if let Some(body) = &request.body {
+                                        builder.body(body.clone())
+                                    } else {
+                                        builder
+                                    }
+                                }
+                                Method::Post => {
+                                    let builder = client.post(&request.url).headers(headers);
+
+                                    if let Some(body) = &request.body {
+                                        builder.body(body.clone())
+                                    } else {
+                                        builder
+                                    }
+                                }
+                            };
+                            let resp = builder.send().await;
+                            println!("response: {:?}", resp);
+                        });
+
+                        handles.push(handle)
+                    }
                     RelayedMessageRequest::Log(log) => {
                         println!("{:?}", log);
                     }
                 }
+            }
+
+            for handle in handles {
+                let _ = handle.await;
             }
         })
         .await;

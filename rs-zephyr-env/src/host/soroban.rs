@@ -197,6 +197,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let network_config = NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size)?;
         network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
 
+        let random_prng_seed = rand::Rng::gen(&mut rand::thread_rng());
+
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
             snapshot_source,
             Some(network_config),
@@ -205,7 +207,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             host_fn,
             None,
             &source,
-            [0; 32],
+            random_prng_seed,
             true,
         )?;
 

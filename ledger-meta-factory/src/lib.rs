@@ -120,7 +120,7 @@ impl Transition {
                 .try_into()
                 .unwrap(),
                 soroban_meta: Some(SorobanTransactionMeta {
-                    ext: ExtensionPoint::V0,
+                    ext: stellar_xdr::next::SorobanTransactionMetaExt::V0,
                     return_value: ScVal::Void,
                     diagnostic_events: vec![].try_into().unwrap(),
                     events: vec![event].try_into().unwrap(),
