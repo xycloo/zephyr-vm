@@ -22,7 +22,7 @@ use ledger_meta_factory::Transition;
 use postgres::NoTls;
 use reqwest::{header::{HeaderMap, HeaderName}, Client};
 use rs_zephyr_common::{http::Method, RelayedMessageRequest};
-use std::{fs::File, io::Read, rc::Rc, str::FromStr};
+use std::{collections::HashMap, fs::File, io::Read, rc::Rc, str::FromStr};
 use symbol::Symbol;
 use tokio::task::JoinError;
 
@@ -170,7 +170,14 @@ impl Column {
             col_type: "BYTEA".to_string(),
         }
     }
-}
+
+    pub fn with_name_and_type(name: &impl ToString, col_type: String) -> Self {
+        Column {
+            name: name.to_string(),
+            col_type: col_type
+        }
+    }
+} 
 
 impl MercuryDatabaseSetup {
     /// Instantiate a new db object.
@@ -210,6 +217,7 @@ impl MercuryDatabaseSetup {
         id: i64,
         name: impl ToString,
         columns: Vec<impl ToString>,
+        native_types: Option<Vec<(usize, &str)>>
     ) -> anyhow::Result<()> {
         let id = utils::bytes::i64_to_bytes(id);
         let name_symbol = Symbol::try_from_bytes(name.to_string().as_bytes()).unwrap();
@@ -233,8 +241,20 @@ impl MercuryDatabaseSetup {
 
         let mut new_table_stmt = String::from(&format!("CREATE TABLE {} (", table_name));
 
+        let mut native_indexes =  HashMap::new();
+        if let Some(pairs) = native_types {
+            for pair in pairs {
+                native_indexes.insert(pair.0, pair.1.to_string());
+            }
+        }
+
         for (index, column) in columns.iter().enumerate() {
-            let column = Column::with_name(column);
+            let column = if let Some(custom_type) = native_indexes.get(&index) {
+                Column::with_name_and_type(column, custom_type.to_string())
+            } else {
+                Column::with_name(column)
+            };
+            
             new_table_stmt.push_str(&format!("{} {}", column.name, column.col_type));
 
             if index < columns.len() - 1 {

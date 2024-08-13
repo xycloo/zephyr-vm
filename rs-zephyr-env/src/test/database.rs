@@ -10,7 +10,7 @@ use crate::testutils::{MercuryDatabaseSetup, TestHost};
 async fn tables_manager() {
     let mut dbsetup =
         MercuryDatabaseSetup::setup_local("postgres://postgres:postgres@localhost:5432");
-    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"], None).await;
 
     assert!(created.is_ok());
 
@@ -24,7 +24,7 @@ async fn write_read() {
     let mut dbsetup = env.database("postgres://postgres:postgres@localhost:5432");
     let program = env.new_program("../target/wasm32-unknown-unknown/release/db_write_read.wasm");
 
-    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"], None).await;
 
     assert!(created.is_ok());
     assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 0);
@@ -53,7 +53,7 @@ async fn write_update_read() {
     let program =
         env.new_program("../target/wasm32-unknown-unknown/release/db_write_update_read.wasm");
 
-    let created = dbsetup.load_table(0, "hello", vec!["tdep"]).await;
+    let created = dbsetup.load_table(0, "hello", vec!["tdep"], None).await;
 
     assert!(created.is_ok());
     assert_eq!(dbsetup.get_rows_number(0, "hello").await.unwrap(), 0);
