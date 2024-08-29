@@ -45,7 +45,7 @@ ledger-meta-factory = { version = "0.1.2", path = "../ledger-meta-factory", opti
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
 path = "../../rs-soroban-env/soroban-simulation"
-version = "21.2.0"
+version = "21.2.1"
 
 [dependencies.stellar-xdr]
 version = "=21.2.0"
