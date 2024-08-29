@@ -103,7 +103,7 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
     /// to just communicate starting input to a program, which could
     /// be both:
     /// - a ledger close meta (state transition) < for ingestors
-    /// - a request body < for functions  
+    /// - a request body < for functions
     pub latest_close: RefCell<Option<Vec<u8>>>, // some zephyr programs might not need the ledger close meta
 
     /// Database implementation.
@@ -400,7 +400,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     /// and calls the [`DB::read_raw()`] function. Reading from the database is streamlined
     /// to the [`DB`] implementation.
     /// - Database update: Retrieves and structures instructions and data used by the [`DB`]
-    /// implementation to update a table.  
+    /// implementation to update a table.
     /// - Log function: takes an integer from the module and logs it in the host.
     /// - Stack push function: pushes an integer from the module to the host's pseudo
     /// stack. This is currently the means of communication for unbound intructions between
@@ -1167,7 +1167,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban_simulate_tx_fn,
             bytes_copy_to_linear_memory_mem,
             db_read_as_id_fn,
-            read_account_from_ledger_fn
+            read_account_from_ledger_fn,
         ];
 
         soroban_functions.append(&mut arr);

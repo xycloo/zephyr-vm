@@ -8,7 +8,8 @@ use anyhow::Result;
 use soroban_env_host::{
     budget::AsBudget,
     xdr::{
-        AccountId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress, ScVal, Uint256, WriteXdr
+        AccountId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress,
+        ScVal, Uint256, WriteXdr,
     },
     Env, LedgerInfo, Symbol, TryFromVal, Val,
 };
@@ -104,12 +105,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     ) -> Result<(i64, i64)> {
         let host = caller.data();
         let account = stellar_strkey::ed25519::PublicKey(account).to_string();
-        
+
         let read = {
             let ledger = &host.0.ledger.0.ledger;
-            bincode::serialize(
-                &ledger.read_account(account),
-            )?
+            bincode::serialize(&ledger.read_account(account))?
         };
 
         Self::write_to_memory(caller, &read)
