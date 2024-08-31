@@ -45,7 +45,7 @@ ledger-meta-factory = { version = "0.1.2", path = "../ledger-meta-factory", opti
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
 path = "../../rs-soroban-env/soroban-simulation"
-version = "21.2.1"
+version = "21.2.2"
 
 [dependencies.stellar-xdr]
 version = "=21.2.0"
@@ -56,13 +56,13 @@ features = ["next", "curr", "serde", "base64"]
 [dependencies.soroban-env-host]
 package = "soroban-env-host-zephyr"
 path = "../../rs-soroban-env/soroban-env-host"
-version = "21.2.1"
+version = "21.2.2"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
 path = "../../rs-soroban-env/soroban-env-macros"
-version = "21.2.1"
+version = "21.2.2"
 
 
 [features]
