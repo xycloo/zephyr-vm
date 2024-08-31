@@ -1,6 +1,6 @@
 [package]
 name = "zephyr-vm"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 authors = ["Tommaso De Ponti @ xyclooLabs <tommaso@xycloo.com>"]
 description = "The first Blockchain data focused cloud computing web assembly virtual machine. Currently on Stellar."
@@ -62,7 +62,7 @@ features = ["testutils", "next"]
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
 path = "../../rs-soroban-env/soroban-env-macros"
-version = "21.2.0"
+version = "21.2.1"
 
 
 [features]

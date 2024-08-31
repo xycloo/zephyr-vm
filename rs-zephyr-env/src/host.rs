@@ -146,6 +146,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             let (sequence, timestamp) = snapshot_utils::get_current_ledger_sequence();
             li.sequence_number = sequence as u32;
             li.timestamp = timestamp as u64;
+            li.network_id = network_id;
         })?;
         host.enable_debug()?;
 

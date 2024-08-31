@@ -1,11 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "rs-zephyr-env", 
-    "macros", 
-    "wasm-tests/db-write-read", 
-    "wasm-tests/db-write-update-read"
-, "wasm-tests/soroban-host", "ledger-meta-factory"]
+    "rs-zephyr-env",
+    "macros",
+    #"wasm-tests/db-write-read",
+    #"wasm-tests/db-write-update-read"
+    #, "wasm-tests/soroban-host",
+    "ledger-meta-factory",
+]
 
 
 [profile.release]
