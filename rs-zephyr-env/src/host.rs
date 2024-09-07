@@ -147,6 +147,8 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             li.sequence_number = sequence as u32;
             li.timestamp = timestamp as u64;
             li.network_id = network_id;
+
+            li.protocol_version = 21;
         })?;
         host.enable_debug()?;
 
@@ -182,6 +184,9 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
     fn mocked() -> Result<Self> {
         let host = soroban_env_host::Host::test_host_with_recording_footprint();
         host.as_budget().reset_unlimited().unwrap();
+        host.with_mut_ledger_info(|li| {
+            li.protocol_version = 21;
+        })?;
         let test_contract = Rc::new(ZephyrTestContract {});
         let contract_id_bytes = [0; 32];
         let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
