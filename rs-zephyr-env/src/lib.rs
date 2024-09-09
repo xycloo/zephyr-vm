@@ -6,7 +6,7 @@
 //! Even if Zephyr is built to be used in Mercury, it is implementation-agnostic
 //! and can be integrated in any kind of implementation.
 
-mod snapshot;
+pub mod snapshot;
 
 pub mod budget;
 pub mod db;
