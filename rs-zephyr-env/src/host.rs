@@ -23,7 +23,7 @@ use memory::CustomVMCtx;
 use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
 use soroban_env_host::budget::AsBudget;
 use soroban_env_host::xdr::{Hash, Limits, ReadXdr, ScAddress, ScVal};
-use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, VecObject};
+use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, VecObject, VmCaller};
 use soroban_env_host::{CheckedEnvArg, MapObject, Symbol, Val};
 use std::{
     borrow::BorrowMut,
