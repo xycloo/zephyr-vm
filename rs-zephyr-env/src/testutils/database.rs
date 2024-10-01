@@ -397,7 +397,8 @@ impl ZephyrDatabase for MercuryDatabase {
                     .to_string()
                     .map_err(|_| DatabaseError::WriteError)?;
 
-                let condition_str = format!("{} {} ${}", colname, operator, idx + 1);
+                let condition_str =
+                    format!("{} {} ${}", colname, operator, write_data.len() + idx + 1);
                 if idx != condition.len() - 1 {
                     query.push_str(&format!("{} AND ", condition_str));
                 } else {
