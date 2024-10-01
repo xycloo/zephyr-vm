@@ -14,12 +14,22 @@ pub enum WhereCond {
     /// Where column i64 is equal to the corresponding condition
     /// argument.
     ColEq(i64),
+
+    /// Where column i64 is greater than the corresponding condition
+    /// argument.
+    ColGt(i64),
+
+    /// Where column i64 is less than the corresponding condition
+    /// argument.
+    ColLt(i64),
 }
 
 impl WhereCond {
     pub(crate) fn from_column_and_operator(col: i64, operator: i64) -> Result<Self> {
         match operator {
             0 => Ok(Self::ColEq(col)),
+            1 => Ok(Self::ColGt(col)),
+            2 => Ok(Self::ColLt(col)),
             _ => Err(DatabaseError::OperatorError.into()),
         }
     }

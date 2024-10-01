@@ -65,7 +65,7 @@ impl ZephyrMock for MercuryDatabase {
 
 pub enum WriteParam {
     Bytes(Vec<u8>),
-    Integer(i64)
+    Integer(i64),
 }
 
 impl WriteParam {
@@ -117,36 +117,38 @@ impl ZephyrDatabase for MercuryDatabase {
         let mut query = format!("SELECT {} FROM {}", columns_string, table_name);
 
         let mut owned_params: Vec<WriteParam> = Vec::new();
-        
+
         //let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         let mut types = Vec::new();
         if let Some(condition) = condition {
             query.push_str(" WHERE ");
 
             for idx in 0..condition.len() {
-                let colname = match condition[idx] {
-                    WhereCond::ColEq(column) => {
-                        let colname = if let Ok(string) = symbol::Symbol(column as u64).to_string()
-                        {
-                            string
-                        } else {
-                            return Err(DatabaseError::WriteError);
-                        };
+                let colname = {
+                    let (operator, column) = match condition[idx] {
+                        WhereCond::ColEq(column) => ("=", column),
+                        WhereCond::ColGt(column) => (">", column),
+                        WhereCond::ColLt(column) => ("<", column),
+                    };
 
-                        if idx != condition.len() - 1 {
-                            query.push_str(&format!("{} = ${} AND ", colname, idx + 1));
-                        } else {
-                            query.push_str(&format!("{} = ${}", colname, idx + 1));
-                        }
+                    let colname = symbol::Symbol(column as u64)
+                        .to_string()
+                        .map_err(|_| DatabaseError::WriteError)?;
 
-                        colname
+                    let condition_str = format!("{} {} ${}", colname, operator, idx + 1);
+                    if idx != condition.len() - 1 {
+                        query.push_str(&format!("{} AND ", condition_str));
+                    } else {
+                        query.push_str(&condition_str);
                     }
+
+                    colname
                 };
 
                 let col_type = types_map.get(&colname).ok_or(DatabaseError::WriteError)?;
                 let param_raw = &condition_args.as_ref().unwrap()[idx];
-                
-                // Note: we check the column type rather than just trying a succeful deser 
+
+                // Note: we check the column type rather than just trying a succeful deser
                 // from an integer val for backwards compatibility.
                 if col_type == "bigint" {
                     let param_deser = bincode::deserialize::<ZephyrVal>(&param_raw);
@@ -156,7 +158,7 @@ impl ZephyrDatabase for MercuryDatabase {
                         Ok(ZephyrVal::I64(num)) => num as i64,
                         Ok(ZephyrVal::U32(num)) => num as i64,
                         Ok(ZephyrVal::U64(num)) => num as i64,
-                        _ => return Err(DatabaseError::WriteError)
+                        _ => return Err(DatabaseError::WriteError),
                     };
 
                     owned_params.push(WriteParam::Integer(native));
@@ -167,9 +169,9 @@ impl ZephyrDatabase for MercuryDatabase {
                 }
             }
 
-//            for _ in 0..params.len() {
-//                types.push(Type::BYTEA)
-//            }
+            //            for _ in 0..params.len() {
+            //                types.push(Type::BYTEA)
+            //            }
         }
 
         let stmt = if let Ok(stmt) = client.prepare_typed(&query, &types) {
@@ -178,7 +180,8 @@ impl ZephyrDatabase for MercuryDatabase {
             return Err(DatabaseError::ZephyrQueryMalformed);
         };
 
-        let params: Vec<&(dyn ToSql + Sync)> = owned_params.iter().map(|param| param.as_tosql()).collect();
+        let params: Vec<&(dyn ToSql + Sync)> =
+            owned_params.iter().map(|param| param.as_tosql()).collect();
         let result = if let Ok(res) = client.query(&stmt, &params) {
             println!("Response {:?}", res);
             let mut rows = Vec::new();
@@ -191,7 +194,9 @@ impl ZephyrDatabase for MercuryDatabase {
                     let bytes: Vec<u8> = if let Ok(bytes) = row.try_get(in_row_idx) {
                         bytes
                     } else {
-                        let integer: i64 = row.try_get(in_row_idx).map_err(|_| DatabaseError::ZephyrQueryError)?;
+                        let integer: i64 = row
+                            .try_get(in_row_idx)
+                            .map_err(|_| DatabaseError::ZephyrQueryError)?;
                         bincode::serialize(&ZephyrVal::I64(integer)).unwrap()
                     };
 
@@ -224,10 +229,7 @@ impl ZephyrDatabase for MercuryDatabase {
             return Err(DatabaseError::ZephyrQueryError);
         };
 
-        let table_name = format!(
-            "zephyr_{}",
-            hex::encode(written_point_hash).as_str()
-        );
+        let table_name = format!("zephyr_{}", hex::encode(written_point_hash).as_str());
 
         let types_map = get_table_types(&mut client, &table_name);
 
@@ -240,7 +242,7 @@ impl ZephyrDatabase for MercuryDatabase {
             hex::encode(written_point_hash).as_str()
         ));
         query.push_str(" (");
-        
+
         for idx in 0..write_data.len() {
             let col = if let Ok(string) = symbol::Symbol(write_data[idx] as u64).to_string() {
                 string
@@ -249,16 +251,17 @@ impl ZephyrDatabase for MercuryDatabase {
             };
             let bytes = &written[idx];
             query.push_str(&col);
-            
+
             if types_map.get(&col).unwrap() == "bigint" {
-                let param_deser: ZephyrVal = bincode::deserialize(&bytes).map_err(|_| DatabaseError::WriteError)?;
+                let param_deser: ZephyrVal =
+                    bincode::deserialize(&bytes).map_err(|_| DatabaseError::WriteError)?;
                 let param = match param_deser {
                     ZephyrVal::I128(num) => num as i64,
                     ZephyrVal::I32(num) => num as i64,
                     ZephyrVal::I64(num) => num as i64,
                     ZephyrVal::U32(num) => num as i64,
                     ZephyrVal::U64(num) => num as i64,
-                    _ => return Err(DatabaseError::WriteError)
+                    _ => return Err(DatabaseError::WriteError),
                 };
                 owned_params.push(WriteParam::Integer(param));
                 types.push(Type::INT8)
@@ -302,7 +305,8 @@ impl ZephyrDatabase for MercuryDatabase {
             return Err(DatabaseError::WriteError);
         };
 
-        let params: Vec<&(dyn ToSql + Sync)> = owned_params.iter().map(|param| param.as_tosql()).collect();
+        let params: Vec<&(dyn ToSql + Sync)> =
+            owned_params.iter().map(|param| param.as_tosql()).collect();
         let insert = client.execute(&statement, &params);
         if let Ok(_) = insert {
             Ok(())
@@ -321,10 +325,7 @@ impl ZephyrDatabase for MercuryDatabase {
         condition_args: Vec<Vec<u8>>,
     ) -> Result<(), DatabaseError> {
         let connection = Client::connect(&self.postgres_arg, NoTls);
-        let table_name = format!(
-            "zephyr_{}",
-            hex::encode(written_point_hash).as_str()
-        );
+        let table_name = format!("zephyr_{}", hex::encode(written_point_hash).as_str());
 
         let mut client = if let Ok(client) = connection {
             client
@@ -360,8 +361,8 @@ impl ZephyrDatabase for MercuryDatabase {
             }
 
             let col_type = types_map.get(&col).ok_or(DatabaseError::WriteError)?;
-            
-            // Note: we check the column type rather than just trying a succeful deser 
+
+            // Note: we check the column type rather than just trying a succeful deser
             // from an integer val for backwards compatibility.
             if col_type == "bigint" {
                 let param_deser = bincode::deserialize::<ZephyrVal>(&bytes);
@@ -371,7 +372,7 @@ impl ZephyrDatabase for MercuryDatabase {
                     Ok(ZephyrVal::I64(num)) => num as i64,
                     Ok(ZephyrVal::U32(num)) => num as i64,
                     Ok(ZephyrVal::U64(num)) => num as i64,
-                    _ => return Err(DatabaseError::WriteError)
+                    _ => return Err(DatabaseError::WriteError),
                 };
 
                 owned_params.push(WriteParam::Integer(native));
@@ -385,32 +386,31 @@ impl ZephyrDatabase for MercuryDatabase {
         query.push_str(" WHERE ");
 
         for idx in 0..condition.len() {
-            let colname = match condition[idx] {
-                WhereCond::ColEq(column) => {
-                    let colname = if let Ok(string) = symbol::Symbol(column as u64).to_string() {
-                        string
-                    } else {
-                        return Err(DatabaseError::WriteError);
-                    };
+            let colname = {
+                let (operator, column) = match condition[idx] {
+                    WhereCond::ColEq(column) => ("=", column),
+                    WhereCond::ColGt(column) => (">", column),
+                    WhereCond::ColLt(column) => ("<", column),
+                };
 
-                    if idx != condition.len() - 1 {
-                        query.push_str(&format!(
-                            "{} = ${} AND ",
-                            colname,
-                            write_data.len() + idx + 1
-                        ));
-                    } else {
-                        query.push_str(&format!("{} = ${}", colname, write_data.len() + idx + 1));
-                    }
+                let colname = symbol::Symbol(column as u64)
+                    .to_string()
+                    .map_err(|_| DatabaseError::WriteError)?;
 
-                    colname
+                let condition_str = format!("{} {} ${}", colname, operator, idx + 1);
+                if idx != condition.len() - 1 {
+                    query.push_str(&format!("{} AND ", condition_str));
+                } else {
+                    query.push_str(&condition_str);
                 }
+
+                colname
             };
 
             let col_type = types_map.get(&colname).ok_or(DatabaseError::WriteError)?;
             let param_raw = &condition_args[idx];
-            
-            // Note: we check the column type rather than just trying a succeful deser 
+
+            // Note: we check the column type rather than just trying a succeful deser
             // from an integer val for backwards compatibility.
             if col_type == "bigint" {
                 let param_deser = bincode::deserialize::<ZephyrVal>(&param_raw);
@@ -420,7 +420,7 @@ impl ZephyrDatabase for MercuryDatabase {
                     Ok(ZephyrVal::I64(num)) => num as i64,
                     Ok(ZephyrVal::U32(num)) => num as i64,
                     Ok(ZephyrVal::U64(num)) => num as i64,
-                    _ => return Err(DatabaseError::WriteError)
+                    _ => return Err(DatabaseError::WriteError),
                 };
 
                 owned_params.push(WriteParam::Integer(native));
@@ -432,7 +432,7 @@ impl ZephyrDatabase for MercuryDatabase {
         }
 
         //for _ in 0..params.len() {
-            //types.push(Type::BYTEA)
+        //types.push(Type::BYTEA)
         //}
 
         let statement = if let Ok(stmt) = client.prepare_typed(&query, &types) {
@@ -441,7 +441,8 @@ impl ZephyrDatabase for MercuryDatabase {
             return Err(DatabaseError::WriteError);
         };
 
-        let params: Vec<&(dyn ToSql + Sync)> = owned_params.iter().map(|param| param.as_tosql()).collect();
+        let params: Vec<&(dyn ToSql + Sync)> =
+            owned_params.iter().map(|param| param.as_tosql()).collect();
         if let Ok(_) = client.execute(&statement, &params) {
             Ok(())
         } else {
@@ -454,18 +455,18 @@ fn get_table_types(client: &mut Client, table_name: &str) -> HashMap<String, Str
     let mut types_map = HashMap::new();
     let query = format!(
         "
-        SELECT 
-            a.attname as column_name, 
+        SELECT
+            a.attname as column_name,
             pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type
-        FROM 
+        FROM
             pg_catalog.pg_attribute a
-        JOIN 
+        JOIN
             pg_catalog.pg_class c ON a.attrelid = c.oid
-        JOIN 
+        JOIN
             pg_catalog.pg_namespace n ON c.relnamespace = n.oid
-        WHERE 
-            c.relname = $1 
-            AND a.attnum > 0 
+        WHERE
+            c.relname = $1
+            AND a.attnum > 0
             AND NOT a.attisdropped;
         "
     );
