@@ -42,10 +42,6 @@ impl MemoryManager {
 
 /// The Zephyr VM.
 pub struct Vm<DB: ZephyrDatabase, L: LedgerStateRead> {
-    /// Module object.
-    #[allow(dead_code)]
-    module: Module, // currently not used.
-
     /// VM's store object. Provides bindings to the host.
     pub store: RefCell<Store<Host<DB, L>>>,
 
@@ -57,6 +53,98 @@ pub struct Vm<DB: ZephyrDatabase, L: LedgerStateRead> {
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static> Vm<DB, L> {
+    /// Returns a ZVM handle given an in-memory wasm instance.
+    pub fn new_from_initialized_module(host: &Host<DB, L>, instance: Instance) -> Result<Rc<Self>> {
+        let mut config = wasmi::Config::default();
+        let stack_limits = StackLimits::new(
+            MIN_VALUE_STACK_HEIGHT,
+            MAX_VALUE_STACK_HEIGHT,
+            MAX_RECURSION_DEPTH,
+        )
+        .map_err(|_| HostError::InternalError(InternalError::WasmiConfig))?;
+
+        // TODO: decide which post-mvp features to override.
+        // For now we use wasmtime's defaults.
+        config.consume_fuel(true);
+        config.set_stack_limits(stack_limits);
+        config.compilation_mode(wasmi::CompilationMode::Eager);
+
+        let engine = Engine::new(&config);
+        let mut store = Store::new(&engine, host.clone());
+        if let Err(error) = host.as_budget().infer_fuel(&mut store) {
+            return Err(anyhow!(error));
+        };
+
+        // TODO: set Store::limiter() once host implements ResourceLimiter
+
+        let mut linker = <Linker<Host<DB, L>>>::new(&engine);
+
+        for func_info in host.host_functions(&mut store) {
+            // Note: this is just a current workaround.
+            let _ = linker.define(func_info.module, func_info.func, func_info.wrapped);
+        }
+
+        let memory = instance
+            .get_export(&mut store, "memory")
+            .ok_or_else(|| HostError::NoMemoryExport)?
+            .into_memory()
+            .ok_or_else(|| HostError::NoMemoryExport)?;
+
+        let memory_manager = MemoryManager::new(memory, 0);
+
+        Ok(Rc::new(Self {
+            store: RefCell::new(store),
+            memory_manager,
+            instance,
+        }))
+    }
+
+    /// Constructs and initializes a new wasm instance.
+    pub fn new_only_instance(
+        host: &Host<DB, L>,
+        wasm_module_code_bytes: &[u8],
+    ) -> Result<Instance> {
+        let mut config = wasmi::Config::default();
+        let stack_limits = StackLimits::new(
+            MIN_VALUE_STACK_HEIGHT,
+            MAX_VALUE_STACK_HEIGHT,
+            MAX_RECURSION_DEPTH,
+        )
+        .map_err(|_| HostError::InternalError(InternalError::WasmiConfig))?;
+
+        // TODO: decide which post-mvp features to override.
+        // For now we use wasmtime's defaults.
+        config.consume_fuel(true);
+        config.set_stack_limits(stack_limits);
+        config.compilation_mode(wasmi::CompilationMode::Lazy);
+
+        let engine = Engine::new(&config);
+
+        // NOTE: This requires validation to occur upon deployment.
+        let module = unsafe { Module::new_unchecked(&engine, wasm_module_code_bytes)? };
+
+        let mut store = Store::new(&engine, host.clone());
+        if let Err(error) = host.as_budget().infer_fuel(&mut store) {
+            return Err(anyhow!(error));
+        };
+
+        // TODO: set Store::limiter() once host implements ResourceLimiter
+
+        let mut linker = <Linker<Host<DB, L>>>::new(&engine);
+
+        for func_info in host.host_functions(&mut store) {
+            // Note: this is just a current workaround.
+            let _ = linker.define(func_info.module, func_info.func, func_info.wrapped);
+        }
+
+        // NOTE
+        // We are not starting instance already.
+        let instance = linker.instantiate(&mut store, &module)?;
+        let instance = instance.start(&mut store)?; // handle
+
+        Ok(instance)
+    }
+
     /// Creates and instantiates the VM.
     pub fn new(host: &Host<DB, L>, wasm_module_code_bytes: &[u8]) -> Result<Rc<Self>> {
         let mut config = wasmi::Config::default();
@@ -74,11 +162,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         config.compilation_mode(wasmi::CompilationMode::Lazy);
 
         let engine = Engine::new(&config);
-        
+
         // NOTE: This requires validation to occur upon deployment.
-        let module = unsafe {
-            Module::new_unchecked(&engine, wasm_module_code_bytes)?
-        };
+        let module = unsafe { Module::new_unchecked(&engine, wasm_module_code_bytes)? };
 
         let mut store = Store::new(&engine, host.clone());
         if let Err(error) = host.as_budget().infer_fuel(&mut store) {
@@ -107,7 +193,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + Clone + 'static>
         let memory_manager = MemoryManager::new(memory, 0);
 
         Ok(Rc::new(Self {
-            module,
             store: RefCell::new(store),
             memory_manager,
             instance,

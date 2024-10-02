@@ -13,6 +13,8 @@ pub mod db;
 pub mod host;
 pub mod vm;
 
+pub use wasmi::Instance;
+
 mod soroban_host_gen;
 
 #[allow(missing_docs)]
