@@ -145,6 +145,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban.as_budget().reset_unlimited().unwrap();
 
             soroban.enable_debug().unwrap();
+
+            println!("{:?} {:?}", val, ScVal::try_from_val(&soroban, &val));
+
             let scval = ScVal::try_from_val(&soroban, &val).map_err(|_| HostError::SorobanHost)?;
             Self::write_to_memory(caller, &scval.to_xdr(Limits::none())?)
         };

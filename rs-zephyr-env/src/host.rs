@@ -690,6 +690,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let valid_host_val_to_scval = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<_>, val: i64| {
+                println!("{:?}", val);
                 let result = Host::valid_host_val_to_scval(caller, Val::from_payload(val as u64));
 
                 if let Ok(res) = result {
@@ -942,6 +943,46 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let map_new_from_linear_memory_mem = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, key_pos: i64, val_pos: i64, len: i64| {
+                    let vm_ctx = CustomVMCtx::new(&caller);
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    let effect = |host: soroban_env_host::Host| {
+                        
+                        let res: Result<_, soroban_env_host::HostError> = host
+                            .map_new_from_linear_memory_mem(
+                                vm_ctx,
+                                build_u32val(&host, key_pos)?,
+                                build_u32val(&host, val_pos)?,
+                                build_u32val(&host, len)?,
+                            );
+
+                        println!("Creating from linear memory {:?}", res);
+
+                        with_frame(host, res)
+                    };
+
+                    let val = effect(host);
+                    match val {
+                        Ok(val) => val.get_payload() as i64,
+                        _ => {
+                            // todo log error.
+                            // Note: this will panic on the guest.
+                            0
+                        }
+                    }
+                },
+            );
+
+            FunctionInfo {
+                module: "m",
+                func: "9",
+                wrapped,
+            }
+        };
+
         let bytes_new_from_linear_memory_mem = {
             let wrapped = Func::wrap(
                 &mut store,
@@ -1174,6 +1215,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             bytes_copy_to_linear_memory_mem,
             db_read_as_id_fn,
             read_account_from_ledger_fn,
+            map_new_from_linear_memory_mem
         ];
 
         soroban_functions.append(&mut arr);

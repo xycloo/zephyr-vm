@@ -32,8 +32,8 @@ serde_json = { version = "1.0", optional = true }
 
 rand = "0.8.5"
 
-rs-zephyr-common = { version = "0.1.5" }
-#rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
+#rs-zephyr-common = { version = "0.1.5" }
+rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
 
 tokio = { version = "1.0", features = ["full"] }
 log = "0.4.20"
@@ -44,25 +44,25 @@ ledger-meta-factory = { version = "0.1.2", path = "../ledger-meta-factory", opti
 
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
-#path = "../../rs-soroban-env/soroban-simulation"
-version = "21.2.2"
+path = "../../rs-soroban-env/soroban-simulation"
+#version = "21.2.2"
 
 [dependencies.stellar-xdr]
-version = "=21.2.0"
+version = "=22.0.0-rc.1.1"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features = ["next", "curr", "serde", "base64"]
 
 [dependencies.soroban-env-host]
 package = "soroban-env-host-zephyr"
-#path = "../../rs-soroban-env/soroban-env-host"
-version = "21.2.2"
+path = "../../rs-soroban-env/soroban-env-host"
+#version = "21.2.2"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
-#path = "../../rs-soroban-env/soroban-env-macros"
-version = "21.2.2"
+path = "../../rs-soroban-env/soroban-env-macros"
+#version = "21.2.2"
 
 
 [features]
