@@ -183,8 +183,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             HostFunction::from_xdr(bytes, Limits::none())?
         };
 
-        println!("Simulating {:?}", host_fn);
-
         let snapshot_source = Rc::new(DynamicSnapshot {});
         let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
         let mut ledger_info = LedgerInfo::default();
@@ -203,7 +201,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let random_prng_seed = rand::Rng::gen(&mut rand::thread_rng());
 
-        println!("Pre-simulate");
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
             snapshot_source,
             Some(network_config),
