@@ -203,6 +203,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
         let random_prng_seed = rand::Rng::gen(&mut rand::thread_rng());
 
+        println!("Pre-simulate");
         let resp = soroban_simulation::simulation::simulate_invoke_host_function_op(
             snapshot_source,
             Some(network_config),
