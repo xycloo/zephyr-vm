@@ -183,6 +183,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             HostFunction::from_xdr(bytes, Limits::none())?
         };
 
+        println!("Simulating {:?}", host_fn);
+
         let snapshot_source = Rc::new(DynamicSnapshot {});
         let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
         let mut ledger_info = LedgerInfo::default();
