@@ -35,7 +35,7 @@ pub trait LedgerStateRead {
     ) -> Vec<ContractDataEntry>;
 
     /// Returns an account object for a certain public key.
-    fn read_account(&self, account: String) -> Option<Account>; 
+    fn read_account(&self, account: String) -> Option<Account>;
 }
 
 /// Empty implementation for the host's ledger reader adapter.

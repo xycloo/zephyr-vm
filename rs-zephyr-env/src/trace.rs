@@ -1,4 +1,7 @@
-use std::{fmt, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
 
@@ -19,9 +22,9 @@ struct TraceImpl {
     trace_point: TracePoint,
     time: u128,
     message: String,
-    
+
     // We want to tag errors to better recognize them. We don't need further debug levels.
-    is_error: bool
+    is_error: bool,
 }
 
 impl StackTrace {
@@ -31,8 +34,13 @@ impl StackTrace {
             let since_the_epoch = start
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards");
-            
-            traces.push(TraceImpl { trace_point: point, time: since_the_epoch.as_millis(), message: message.to_string(), is_error });
+
+            traces.push(TraceImpl {
+                trace_point: point,
+                time: since_the_epoch.as_millis(),
+                message: message.to_string(),
+                is_error,
+            });
         }
     }
 
@@ -43,7 +51,7 @@ impl StackTrace {
     pub fn disable(&mut self) {
         self.0 = None
     }
-    
+
     // No method to clear the trace is needed for now.
 }
 

@@ -3,8 +3,8 @@ use stellar_xdr::next::{
     ContractEvent, ContractEventV0, ExtensionPoint, GeneralizedTransactionSet, Hash,
     InvokeContractArgs, InvokeHostFunctionOp, LedgerCloseMeta, LedgerEntryChanges, Limits,
     Operation, OperationMeta, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
-    SorobanTransactionMeta, TimePoint, Transaction, TransactionEnvelope,
-    TransactionMeta, TransactionMetaV3, TransactionPhase, TransactionResult, TransactionResultExt,
+    SorobanTransactionMeta, TimePoint, Transaction, TransactionEnvelope, TransactionMeta,
+    TransactionMetaV3, TransactionPhase, TransactionResult, TransactionResultExt,
     TransactionResultMeta, TransactionResultPair, TransactionResultResult, TransactionV1Envelope,
     TxSetComponent, TxSetComponentTxsMaybeDiscountedFee, Uint256, WriteXdr,
 };

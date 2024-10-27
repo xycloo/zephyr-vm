@@ -57,4 +57,3 @@ pub enum HostError {
     #[error("Error on the Soroban host side: {0:?}")]
     SorobanHostWithContext(soroban_env_host::Error),
 }
-

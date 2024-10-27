@@ -2,7 +2,8 @@ use super::Host;
 use crate::{
     db::{database::ZephyrDatabase, ledger::LedgerStateRead},
     error::{HostError, InternalError},
-    snapshot::{snapshot_utils, DynamicSnapshot}, trace::TracePoint,
+    snapshot::{snapshot_utils, DynamicSnapshot},
+    trace::TracePoint,
 };
 use anyhow::Result;
 use soroban_env_host::{
@@ -36,7 +37,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let ledger = &host.0.ledger.0.ledger;
             bincode::serialize(
                 &ledger.read_contract_data_entry_by_contract_id_and_key(contract, key),
-            ).unwrap()
+            )
+            .unwrap()
         };
 
         Self::write_to_memory(caller, read)
@@ -47,7 +49,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         contract: [u8; 32],
         offset: i64,
         size: i64,
-    ) -> (Caller<Self>, Result<(i64, i64)> ){
+    ) -> (Caller<Self>, Result<(i64, i64)>) {
         let effect = (|| {
             let host = caller.data();
 
@@ -79,7 +81,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let key = if let Ok(key) = effect {
             key
         } else {
-            return (caller, Err(effect.err().unwrap()))
+            return (caller, Err(effect.err().unwrap()));
         };
 
         Self::internal_read_contract_data_entry_by_contract_id_and_key(caller, contract, key)
@@ -124,7 +126,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Self::write_to_memory(caller, read)
     }
 
-    pub(crate) fn scval_to_valid_host_val(caller: Caller<Self>, scval: ScVal) -> (Caller<Self>, Result<i64>) {
+    pub(crate) fn scval_to_valid_host_val(
+        caller: Caller<Self>,
+        scval: ScVal,
+    ) -> (Caller<Self>, Result<i64>) {
         let val = (|| {
             let host = caller.data();
 
@@ -135,9 +140,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 soroban.enable_debug().unwrap();
 
                 let val = soroban
-                    .with_test_contract_frame(Hash([0; 32]), Symbol::from_small_str("test"), || {
-                        soroban.to_valid_host_val(&scval)
-                    })?
+                    .with_test_contract_frame(
+                        Hash([0; 32]),
+                        Symbol::from_small_str("test"),
+                        || soroban.to_valid_host_val(&scval),
+                    )?
                     .get_payload() as i64;
 
                 (soroban, val)
@@ -151,7 +158,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         (caller, val)
     }
 
-    pub(crate) fn valid_host_val_to_scval(caller: Caller<Self>, val: Val) -> (Caller<Self>, Result<(i64, i64)>) {
+    pub(crate) fn valid_host_val_to_scval(
+        caller: Caller<Self>,
+        val: Val,
+    ) -> (Caller<Self>, Result<(i64, i64)>) {
         let host = caller.data();
 
         let res = {
@@ -159,15 +169,20 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban.as_budget().reset_unlimited().unwrap();
             soroban.enable_debug().unwrap();
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Converting host value to SCVal."), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::SorobanEnvironment,
+                format!("Converting host value to SCVal."),
+                false,
+            );
 
-            let scval = ScVal::try_from_val(&soroban, &val).map_err(|e| HostError::SorobanHostWithContext(e));
+            let scval = ScVal::try_from_val(&soroban, &val)
+                .map_err(|e| HostError::SorobanHostWithContext(e));
             let scval = if let Ok(scval) = scval {
                 scval
             } else {
-                return (caller, Err(scval.err().unwrap().into()))
+                return (caller, Err(scval.err().unwrap().into()));
             };
-            
+
             Self::write_to_memory(caller, scval.to_xdr(Limits::none()).unwrap())
         };
 
@@ -202,7 +217,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 HostFunction::from_xdr(bytes, Limits::none())?
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Simulating host function {:?}.", host_fn), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::SorobanEnvironment,
+                format!("Simulating host function {:?}.", host_fn),
+                false,
+            );
 
             let snapshot_source = Rc::new(DynamicSnapshot {});
             let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(source)));
@@ -217,9 +236,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 let string = std::fs::read_to_string("/tmp/currentbucketsize")?; // unrecoverable: todo handle this
                 string.parse()?
             };
-            
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Current bucket size is {}.", bucket_size), false);
-            let network_config = NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size)?;
+
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::SorobanEnvironment,
+                format!("Current bucket size is {}.", bucket_size),
+                false,
+            );
+            let network_config =
+                NetworkConfig::load_from_snapshot(&DynamicSnapshot {}, bucket_size)?;
             network_config.fill_config_fields_in_ledger_info(&mut ledger_info);
             let random_prng_seed = rand::Rng::gen(&mut rand::thread_rng());
 
@@ -235,7 +259,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 true,
             )?;
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Simulated with result {:?}.", resp.invoke_result), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::SorobanEnvironment,
+                format!("Simulated with result {:?}.", resp.invoke_result),
+                false,
+            );
 
             Ok(resp)
         })();
@@ -243,7 +271,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let resp = if let Ok(resp) = resp {
             resp
         } else {
-            return (caller, Err(resp.err().unwrap()))
+            return (caller, Err(resp.err().unwrap()));
         };
 
         Self::write_to_memory(caller, bincode::serialize(&resp).unwrap())

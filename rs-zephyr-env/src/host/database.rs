@@ -9,11 +9,11 @@ use crate::{
         database::{DatabasePermissions, WhereCond, ZephyrDatabase},
         ledger::LedgerStateRead,
     },
-    error::{HostError, InternalError}, trace::TracePoint,
+    error::{HostError, InternalError},
+    trace::TracePoint,
 };
 
 use super::{utils, Host};
-
 
 impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB, L> {
     pub(crate) fn write_database_raw(caller: Caller<Self>) -> (Caller<Self>, Result<()>) {
@@ -27,14 +27,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     utils::bytes::i64_to_bytes(value)
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, "Reading the table name.", false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    "Reading the table name.",
+                    false,
+                );
                 let write_point_hash: [u8; 16] = {
                     let point_raw = stack_impl.0.get_with_step()?;
                     let point_bytes = utils::bytes::i64_to_bytes(point_raw);
                     md5::compute([point_bytes, id].concat()).into()
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading column names for table {:?}.", write_point_hash), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!("Reading column names for table {:?}.", write_point_hash),
+                    false,
+                );
                 let columns = {
                     let columns_size_idx = stack_impl.0.get_with_step()?;
                     let mut columns: Vec<i64> = Vec::new();
@@ -44,7 +52,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     columns
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading data segments for table {:?} with columns {:?}.", write_point_hash, columns), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!(
+                        "Reading data segments for table {:?} with columns {:?}.",
+                        write_point_hash, columns
+                    ),
+                    false,
+                );
                 let data_segments = {
                     let mut segments: Vec<(i64, i64)> = Vec::new();
                     let data_segments_size_idx = {
@@ -72,7 +87,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 (mem_manager.memory, write_point_hash, columns, data_segments)
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Using {} segment pairs to retrieve the data from linear memory.", segments.len()), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Using {} segment pairs to retrieve the data from linear memory.",
+                    segments.len()
+                ),
+                false,
+            );
             let aggregated_data = segments
                 .iter()
                 .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
@@ -114,14 +136,22 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     utils::bytes::i64_to_bytes(value)
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, "Reading the table name.", false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    "Reading the table name.",
+                    false,
+                );
                 let write_point_hash: [u8; 16] = {
                     let point_raw = stack_impl.0.get_with_step()?;
                     let point_bytes = utils::bytes::i64_to_bytes(point_raw);
                     md5::compute([point_bytes, id].concat()).into()
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading column names for table {:?}.", write_point_hash), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!("Reading column names for table {:?}.", write_point_hash),
+                    false,
+                );
                 let columns = {
                     let columns_size_idx = stack_impl.0.get_with_step()?;
                     let mut columns: Vec<i64> = Vec::new();
@@ -133,7 +163,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     columns
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading data segments for table {:?} with columns {:?}.", write_point_hash, columns), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!(
+                        "Reading data segments for table {:?} with columns {:?}.",
+                        write_point_hash, columns
+                    ),
+                    false,
+                );
                 let data_segments = {
                     let mut segments: Vec<(i64, i64)> = Vec::new();
 
@@ -150,7 +187,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     segments
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading conditions for table {:?} with columns {:?}.", write_point_hash, columns), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!(
+                        "Reading conditions for table {:?} with columns {:?}.",
+                        write_point_hash, columns
+                    ),
+                    false,
+                );
                 let conditions = {
                     let mut conditions = Vec::new();
 
@@ -168,7 +212,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     conditions
                 };
 
-                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading condition arguments for table {:?} with columns {:?}.", write_point_hash, columns), false);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::DatabaseImpl,
+                    format!(
+                        "Reading condition arguments for table {:?} with columns {:?}.",
+                        write_point_hash, columns
+                    ),
+                    false,
+                );
                 let conditions_args = {
                     let mut segments = Vec::new();
 
@@ -207,13 +258,27 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 )
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Using {} segment pairs to retrieve the data from linear memory.", segments.len()), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Using {} segment pairs to retrieve the data from linear memory.",
+                    segments.len()
+                ),
+                false,
+            );
             let aggregated_data = segments
                 .iter()
                 .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Using {} segment pairs to retrieve the condition args from linear memory.", segments.len()), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Using {} segment pairs to retrieve the condition args from linear memory.",
+                    segments.len()
+                ),
+                false,
+            );
             let aggregated_conditions_args = conditions_args
                 .iter()
                 .map(|segment| Self::read_segment_from_memory(&memory, &caller, *segment))
@@ -227,7 +292,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 return Err(DatabaseError::WriteOnReadOnly.into());
             }
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Delegating database update instructions to generic database implementation."), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Delegating database update instructions to generic database implementation."
+                ),
+                false,
+            );
             db_impl.db.update_raw(
                 host.get_host_id(),
                 write_point_hash,
@@ -244,14 +315,17 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     }
 
     // todo: read from other id notice for payment.
-    pub(crate) fn read_database_as_id(caller: Caller<Self>, host_id: i64) -> (Caller<Self>, Result<(i64, i64)>) {
+    pub(crate) fn read_database_as_id(
+        caller: Caller<Self>,
+        host_id: i64,
+    ) -> (Caller<Self>, Result<(i64, i64)>) {
         let host = caller.data();
-        
+
         let raw_read = host.read_database_raw(host_id, &caller);
         let read = if let Ok(read) = raw_read {
             read
         } else {
-            return (caller, Err(raw_read.err().unwrap()))
+            return (caller, Err(raw_read.err().unwrap()));
         };
 
         Self::write_to_memory(caller, read)
@@ -265,7 +339,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read = if let Ok(read) = raw_read {
             read
         } else {
-            return (caller, Err(raw_read.err().unwrap()))
+            return (caller, Err(raw_read.err().unwrap()));
         };
         Self::write_to_memory(caller, read)
     }
@@ -285,7 +359,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
             let id = utils::bytes::i64_to_bytes(host_id);
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, "Reading the table name.", false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                "Reading the table name.",
+                false,
+            );
             let read_point_hash: [u8; 16] = {
                 let point_raw = stack_impl.get_with_step()?;
                 let point_bytes = utils::bytes::i64_to_bytes(point_raw);
@@ -293,7 +371,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 md5::compute([point_bytes, id].concat()).into()
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading column names for table {:?}.", read_point_hash), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!("Reading column names for table {:?}.", read_point_hash),
+                false,
+            );
             let read_data = {
                 let data_size_idx = stack_impl.get_with_step()?;
                 let mut retrn = Vec::new();
@@ -304,7 +386,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 retrn
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading conditions for table {:?} with columns {:?}.", read_point_hash, read_data), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Reading conditions for table {:?} with columns {:?}.",
+                    read_point_hash, read_data
+                ),
+                false,
+            );
             let conditions = {
                 let mut conditions = Vec::new();
                 let non_fixed = stack_impl.get_with_step();
@@ -327,7 +416,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             };
             let has_conditions = conditions.is_some();
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading condition arguments for table {:?} with columns {:?}.", read_point_hash, read_data), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Reading condition arguments for table {:?} with columns {:?}.",
+                    read_point_hash, read_data
+                ),
+                false,
+            );
             let conditions_args = if has_conditions {
                 let mut segments = Vec::new();
 
@@ -347,7 +443,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 None
             };
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Aggregating condition arguments for table {:?} with columns {:?}.", read_point_hash, read_data), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Aggregating condition arguments for table {:?} with columns {:?}.",
+                    read_point_hash, read_data
+                ),
+                false,
+            );
             let aggregated_conditions_args = if has_conditions {
                 let memory = Self::get_memory(caller);
                 Some(
@@ -364,7 +467,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             let user_id = host.get_host_id();
             stack_impl.clear();
 
-            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Delegating database read instructions to generic database implementation."), false);
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                TracePoint::DatabaseImpl,
+                format!(
+                    "Delegating database read instructions to generic database implementation."
+                ),
+                false,
+            );
             db_impl.db.read_raw(
                 user_id,
                 read_point_hash,

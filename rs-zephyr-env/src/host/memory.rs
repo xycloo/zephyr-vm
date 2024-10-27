@@ -90,7 +90,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         memory
     }
 
-    pub(crate) fn write_to_memory(mut caller: Caller<Self>, contents: Vec<u8>) -> (Caller<Self>, Result<(i64, i64)>) {
+    pub(crate) fn write_to_memory(
+        mut caller: Caller<Self>,
+        contents: Vec<u8>,
+    ) -> (Caller<Self>, Result<(i64, i64)>) {
         let effect = (|| {
             let (memory, offset, data) = {
                 let host = caller.data();
@@ -135,7 +138,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     ) -> Result<i64> {
         let memory = Self::get_memory(caller);
         Self::grow_memory_pages_if_needed(memory, caller, contents.len());
-        
+
         if let Err(error) = memory.write(caller, pos as usize, contents) {
             return Err(anyhow!(error));
         };
@@ -156,10 +159,18 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Ok(written_vec)
     }
 
-    pub(crate) fn grow_memory_pages_if_needed(memory: Memory, caller: &mut Caller<Self>, buf_len: usize) {
+    pub(crate) fn grow_memory_pages_if_needed(
+        memory: Memory,
+        caller: &mut Caller<Self>,
+        buf_len: usize,
+    ) {
         // Estimating free allocated memory.
-        let current_estimated_free = memory.data(&caller).iter().filter(|byte| **byte == 0x00_u8).count();
-        
+        let current_estimated_free = memory
+            .data(&caller)
+            .iter()
+            .filter(|byte| **byte == 0x00_u8)
+            .count();
+
         if current_estimated_free < buf_len + KEEP_FREE {
             let _ = memory.grow(caller, Pages::new(100).unwrap());
         }
