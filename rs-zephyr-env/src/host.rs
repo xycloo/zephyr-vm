@@ -6,6 +6,7 @@
 use crate::error::InternalError;
 use crate::snapshot::snapshot_utils;
 use crate::soroban_host_gen::{self, build_u32val, with_frame, RelativeObjectConversion};
+use crate::trace::{StackTrace, TracePoint};
 use crate::{
     budget::Budget,
     db::{
@@ -126,11 +127,23 @@ pub struct HostImpl<DB: ZephyrDatabase, L: LedgerStateRead> {
 
     /// Wrapper for the Soroban Host Environment
     pub soroban: RefCell<soroban_env_host::Host>,
+
+    /// VM stack trace.
+    pub stack_trace: RefCell<StackTrace>
 }
 
 /// Zephyr Host State.
 #[derive(Clone)]
 pub struct Host<DB: ZephyrDatabase, L: LedgerStateRead>(Rc<HostImpl<DB, L>>); // We wrap [`HostImpl`] here inside an rc pointer for multi ownership.
+
+// Tracing-friendly utils implementations
+impl<DB: ZephyrDatabase, L: LedgerStateRead> Host<DB, L> {
+    /// Returns a reference to the host's stack implementation.
+    pub fn as_stack_mut(&self) -> RefMut<Stack> {
+        // self.0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Reading through the ZVM stack.", false);
+        self.0.stack.borrow_mut()
+    }
+}
 
 #[allow(dead_code)]
 impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> Host<DB, L> {
@@ -174,6 +187,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
             context: RefCell::new(VmContext::zephyr_standard()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
             soroban: RefCell::new(host),
+            stack_trace: RefCell::new(Default::default())
         })))
     }
 }
@@ -209,6 +223,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
             context: RefCell::new(VmContext::mocked()?),
             stack: RefCell::new(Stack::zephyr_standard()?),
             soroban: RefCell::new(host),
+            stack_trace: RefCell::new(Default::default())
         })))
     }
 }
@@ -257,6 +272,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     /// between ledgers and need to be created and instantiated for each new invocation to
     /// prevent memory issues.
     pub fn add_ledger_close_meta(&mut self, ledger_close_meta: Vec<u8>) -> Result<()> {
+        self.0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Adding ledger close meta to ZVM.", false);
         let current = &self.0.latest_close;
         if current.borrow().is_some() {
             return Err(HostError::LedgerCloseMetaOverridden.into());
@@ -265,6 +281,15 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         *current.borrow_mut() = Some(ledger_close_meta);
 
         Ok(())
+    }
+
+    /// Allow configuring the stack trace.
+    pub fn set_stack_trace(&mut self, active: bool) {
+        if active {
+            self.0.stack_trace.borrow_mut().enable();
+        } else {
+            self.0.stack_trace.borrow_mut().disable();
+        }
     }
 
     /// Adds a transmitter that will be used to send message to the
@@ -283,11 +308,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         self.0.budget.borrow()
     }
 
-    /// Returns a reference to the host's stack implementation.
-    pub fn as_stack_mut(&self) -> RefMut<Stack> {
-        self.0.stack.borrow_mut()
-    }
-
     /// Returns the id assigned to the host.
     pub fn get_host_id(&self) -> i64 {
         self.0.id
@@ -300,6 +320,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
     /// Loads VM context in the host if needed.
     pub fn load_context(&self, vm: Weak<Vm<DB, L>>) -> Result<()> {
+        self.0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Loading ZVM context to the host.", false);
         let mut vm_context = self.0.context.borrow_mut();
 
         vm_context.load_vm(vm)
@@ -307,11 +328,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
 
     fn get_stack(&self) -> Result<Vec<i64>> {
         let stack = self.as_stack_mut();
-
         Ok(stack.0.load())
     }
 
     fn stack_clear(&self) -> Result<()> {
+        self.0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Clearing the ZVM's stack.", false);
         let mut stack = self.as_stack_mut();
         let stack_impl = stack.0.borrow_mut();
         stack_impl.clear();
@@ -320,6 +341,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     }
 
     fn read_ledger_meta(caller: Caller<Self>) -> Result<(i64, i64)> {
+        caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Reading the ledger close meta.", false);
         let host = caller.data();
         let ledger_close_meta = {
             let current = host.0.latest_close.borrow();
@@ -328,12 +350,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 .ok_or_else(|| HostError::NoLedgerCloseMeta)?
         };
 
-        Self::write_to_memory(caller, ledger_close_meta.as_slice())
+        Self::write_to_memory(caller, ledger_close_meta).1
     }
 
     /// Sends a message to any receiver whose sender has been provided to the
     /// host object.
     pub fn send_message(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
+        caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Relaying message to inner transmitter.", false);
         let host = caller.data();
 
         let message = {
@@ -354,8 +377,16 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             Self::read_segment_from_memory(&memory, &caller, segment)?
         };
 
+        caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Successfully read user message, sending to transmitter.", false);
+
         let tx = host.0.transmitter.borrow();
-        let tx = tx.as_ref().ok_or_else(|| HostError::NoTransmitter)?;
+        let tx = if let Some(tx) = tx.as_ref() {
+            tx
+        } else {
+            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Couldn't find transmitter in virtual machine.", true);
+            return Err(HostError::NoTransmitter.into())
+        };
+
 
         tx.send(message)?;
 
@@ -363,6 +394,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     }
 
     fn write_result(caller: Caller<Self>, offset: i64, size: i64) -> Result<()> {
+        caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::ZephyrEnvironment, "Writing invocation result object.", false);
         let host = caller.data();
 
         let memory = {
@@ -392,6 +424,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         self.0.result.borrow().clone()
     }
 
+    /// Read the VM's stack trace.
+    pub fn read_stack_trace(&self) -> StackTrace {
+        self.0.stack_trace.borrow().to_owned()
+    }
+
     /// Returns all the host functions that must be defined in the linker.
     /// This should be the only public function related to foreign functions
     /// provided by the VM, the specific host functions should remain private.
@@ -418,10 +455,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let mut store = store;
 
         let db_write_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                let result = Self::write_database_raw(caller);
-                let res = if result.is_err() {
-                    ZephyrStatus::from(result.err().unwrap()) as i64
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Writing to the database implementation."), false);
+                let (caller, result) = Self::write_database_raw(caller);
+                let res = if let Some(err) = result.err() {
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Hit error {:?} while writing to the database implementation.", err), true);
+                    ZephyrStatus::from(err) as i64
                 } else {
                     ZephyrStatus::Success as i64
                 };
@@ -437,10 +476,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let db_update_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                let result = Self::update_database_raw(caller);
-                let res = if result.is_err() {
-                    ZephyrStatus::from(result.err().unwrap()) as i64
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Updating to the database implementation."), false);
+
+                let (caller, result) = Self::update_database_raw(caller);
+                let res = if let Some(err) = result.err() {
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Hit error {:?} while updating to the database implementation.", err), true);
+                    ZephyrStatus::from(err) as i64
                 } else {
                     ZephyrStatus::Success as i64
                 };
@@ -456,13 +498,16 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let db_read_fn = {
-            let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
-                let result = Host::read_database_self(caller);
-                if let Ok(res) = result {
-                    (ZephyrStatus::Success as i64, res.0, res.1)
+            let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading from the database implementation."), false);
+                
+                let (caller, result) = Host::read_database_self(caller);
+                let res = if let Some(err) = result.err() {
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Hit error {:?} while updating to the database implementation.", err), true);
+                    ZephyrStatus::from(err) as i64
                 } else {
-                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
-                }
+                    ZephyrStatus::Success as i64
+                };
             });
 
             FunctionInfo {
@@ -473,8 +518,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let db_read_as_id_fn = {
-            let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<_>, id: i64| {
-                let result = Host::read_database_as_id(caller, id);
+            let db_read_fn_wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, id: i64| {
+                let (caller, result) = Host::read_database_as_id(caller, id);
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res.0, res.1)
                 } else {
@@ -492,7 +537,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read_contract_data_entry_by_contract_id_and_key_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  contract_part_1: i64,
                  contract_part_2: i64,
                  contract_part_3: i64,
@@ -506,9 +551,12 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         contract_part_4,
                     ]);
 
-                    let result = Host::read_contract_data_entry_by_contract_id_and_key(
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading contract data entry for contract {:?} and key with size of {}.", contract, size), false);
+
+                    let (caller, result) = Host::read_contract_data_entry_by_contract_id_and_key(
                         caller, contract, offset, size,
                     );
+
                     if let Ok(res) = result {
                         (ZephyrStatus::Success as i64, res.0, res.1)
                     } else {
@@ -527,7 +575,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read_contract_instance_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  contract_part_1: i64,
                  contract_part_2: i64,
                  contract_part_3: i64,
@@ -538,7 +586,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         contract_part_3,
                         contract_part_4,
                     ]);
-                    let result = Host::read_contract_instance(caller, contract);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading contract instance for contract {:?}.", contract), false);
+                    
+                    let (caller, result) = Host::read_contract_instance(caller, contract);
 
                     if let Ok(res) = result {
                         (ZephyrStatus::Success as i64, res.0, res.1)
@@ -558,7 +609,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read_contract_entries_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  contract_part_1: i64,
                  contract_part_2: i64,
                  contract_part_3: i64,
@@ -569,7 +620,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         contract_part_3,
                         contract_part_4,
                     ]);
-                    let result = Host::read_contract_entries(caller, contract);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading all non-instance contract entries for contract {:?}.", contract), false);
+                    
+                    let (caller, result) = Host::read_contract_entries(caller, contract);
 
                     if let Ok(res) = result {
                         (ZephyrStatus::Success as i64, res.0, res.1)
@@ -589,7 +643,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read_contract_entries_to_env_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  contract_part_1: i64,
                  contract_part_2: i64,
                  contract_part_3: i64,
@@ -600,6 +654,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         contract_part_3,
                         contract_part_4,
                     ]);
+
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading to soroban value all contract entries for contract {:?}.", contract), false);
+
                     let result = Host::read_contract_entries_to_env(caller, contract);
 
                     if let Ok(res) = result {
@@ -620,7 +677,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let read_account_from_ledger_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  account_part_1: i64,
                  account_part_2: i64,
                  account_part_3: i64,
@@ -631,7 +688,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         account_part_3,
                         account_part_4,
                     ]);
-                    let result = Host::read_account_object(caller, account);
+
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Fetching account {:?} from the ledger.", account), false);
+
+                    let (caller, result) = Host::read_account_object(caller, account);
 
                     if let Ok(res) = result {
                         (ZephyrStatus::Success as i64, res.0, res.1)
@@ -649,7 +709,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let scval_to_valid_host_val = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
                 let bytes = {
                     let host: &Self = caller.data();
                     let memory = {
@@ -670,14 +730,19 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let segment = (offset, size);
                     Self::read_segment_from_memory(&memory, &caller, segment).unwrap()
                 };
+                
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Building ScVal from bytes {:?}.", bytes), false);
                 let scval = ScVal::from_xdr(bytes, Limits::none()).unwrap();
 
-                let result = Host::scval_to_valid_host_val(caller, &scval);
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Converting ScVal {:?} to a valid host value.", scval), false);
+                let (caller, result) = Host::scval_to_valid_host_val(caller, scval.clone());
 
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res)
                 } else {
-                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0)
+                    let error = result.err();
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Hit error {:?} while converting ScVal {:?} to a valid host value.", error, scval), true);
+                    (ZephyrStatus::from(error.unwrap()) as i64, 0)
                 }
             });
 
@@ -689,14 +754,16 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let valid_host_val_to_scval = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, val: i64| {
-                println!("{:?}", val);
-                let result = Host::valid_host_val_to_scval(caller, Val::from_payload(val as u64));
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, val: i64| {
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Converting host val {:?} to ScVal.", val), false);
+                let (caller, result) = Host::valid_host_val_to_scval(caller, Val::from_payload(val as u64));
 
                 if let Ok(res) = result {
                     (ZephyrStatus::Success as i64, res.0, res.1)
                 } else {
-                    (ZephyrStatus::from(result.err().unwrap()) as i64, 0, 0)
+                    let error = result.err();
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Hit error {} while converting host val {:?} to ScVal.", error.as_ref().unwrap(), val), true);
+                    (ZephyrStatus::from(error.unwrap()) as i64, 0, 0)
                 }
             });
 
@@ -708,7 +775,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let conclude_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Writing object of size {:?} to result slot.", size), false);
                 Host::write_result(caller, offset, size).unwrap();
             });
 
@@ -720,7 +788,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let send_message_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, offset: i64, size: i64| {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
                 let result = Host::send_message(caller, offset, size);
 
                 if let Ok(_) = result {
@@ -738,7 +806,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let log_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<_>, param: i64| {
+            let wrapped = Func::wrap(&mut store, |_: Caller<Host<DB, L>>, param: i64| {
                 println!("Logged: {}", param);
             });
 
@@ -750,7 +818,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let stack_push_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>, param: i64| {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, param: i64| {
                 let host: &Host<DB, L> = caller.data();
                 host.as_stack_mut().0.push(param);
             });
@@ -763,7 +831,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let read_ledger_meta_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<_>| {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
                 if let Ok(res) = Host::read_ledger_meta(caller) {
                     res
                 } else {
@@ -795,6 +863,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let vm_ctx = CustomVMCtx::new(&caller);
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
 
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, "Creating soroban string from ZVM linear memory.", false);
+
                     let effect = |host: soroban_env_host::Host| {
                         let result: Result<_, soroban_env_host::HostError> = host
                             .string_new_from_linear_memory_mem(
@@ -809,7 +879,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while reating soroban string from ZVM linear memory.", host_error), true);
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -832,6 +903,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let vm_ctx = CustomVMCtx::new(&caller);
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
 
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Creating soroban symbol from ZVM linear memory."), false);
+
                     let effect = |host: soroban_env_host::Host| {
                         let result: Result<_, soroban_env_host::HostError> = host
                             .symbol_new_from_linear_memory_mem(
@@ -846,7 +919,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban string from ZVM linear memory.", host_error), true);
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -868,6 +942,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 |caller: Caller<Host<DB, L>>, sym: i64, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, "Finding soroban symbol in ZVM linear memory slices.", false);
+                    
                     let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .symbol_index_in_linear_memory_mem(
@@ -891,7 +968,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while finding soroban symbol in ZVM linear memory slices.", host_error), true);
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -913,6 +991,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Creating soroban vector from ZVM linear memory."), false);
+                    
                     let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .vec_new_from_linear_memory_mem(
@@ -927,7 +1008,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban vector from ZVM linear memory.", host_error), true);
+                            
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -951,6 +1034,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
                     let effect = |host: soroban_env_host::Host| {
                         
+                        caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Creating soroban map from ZVM linear memory."), false);
+
                         let res: Result<_, soroban_env_host::HostError> = host
                             .map_new_from_linear_memory_mem(
                                 vm_ctx,
@@ -959,15 +1044,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                 build_u32val(&host, len)?,
                             );
 
-                        println!("Creating from linear memory {:?}", res);
-
                         with_frame(host, res)
                     };
 
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban map from ZVM linear memory.", host_error), true);
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -989,6 +1073,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 |caller: Caller<Host<DB, L>>, lm_pos: i64, len: i64| {
                     let vm_ctx = CustomVMCtx::new(&caller);
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Creating soroban bytes from ZVM linear memory."), false);
+                    
                     let effect = |host: soroban_env_host::Host| {
                         let res: Result<_, soroban_env_host::HostError> = host
                             .bytes_new_from_linear_memory_mem(
@@ -1002,7 +1089,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     let val = effect(host);
                     match val {
                         Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Err(host_error) => {
+                            caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban bytes from ZVM linear memory.", host_error), true);
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -1023,31 +1111,48 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, b: i64, b_pos: i64, lm_pos: i64, len: i64| {
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Copying soroban bytes to ZVM linear memory."), false);
+
                     let effect = |host: soroban_env_host::Host| {
                         let mut vm_ctx = CustomVMCtx::new_mut(caller);
-                        let res: Result<_, soroban_env_host::HostError> = host
-                            .bytes_copy_to_linear_memory_mem(
-                                &mut vm_ctx,
-                                BytesObject::check_env_arg(
-                                    BytesObject::try_marshal_from_relative_value(
-                                        soroban_wasmi::Value::I64(b),
-                                        &host,
-                                    )
-                                    .unwrap(),
+                        let res: Result<_, soroban_env_host::HostError> = (|| {
+                            let bytes_obj = BytesObject::check_env_arg(
+                                BytesObject::try_marshal_from_relative_value(
+                                    soroban_wasmi::Value::I64(b),
                                     &host,
                                 )
                                 .unwrap(),
-                                build_u32val(&host, b_pos)?,
-                                build_u32val(&host, lm_pos)?,
-                                build_u32val(&host, len)?,
-                            );
-                        with_frame(host, res)
+                                &host,
+                            )?;
+                            
+                            let b_pos_val = build_u32val(&host, b_pos)?;
+                            let lm_pos_val = build_u32val(&host, lm_pos)?;
+                            let len_val = build_u32val(&host, len)?;
+                        
+                            host.bytes_copy_to_linear_memory_mem(
+                                &mut vm_ctx,
+                                bytes_obj,
+                                b_pos_val,
+                                lm_pos_val,
+                                len_val,
+                            )
+                        })();
+                            
+                        match with_frame(host, res) {
+                            Ok(val) => Ok((vm_ctx.into_inner(), val)),
+                            Err(host_error) => Err((vm_ctx.into_inner(), host_error)),
+                        }
                     };
 
                     let val = effect(host);
                     match val {
-                        Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Ok((_maybe_vm_ctx, val)) => val.get_payload() as i64,
+                        Err((maybe_caller, host_error)) => {
+                            if let Some(caller) = maybe_caller {
+                                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban bytes from ZVM linear memory.", host_error), true);
+                            };
+
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -1068,10 +1173,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, map: i64, keys_pos: i64, vals_pos: i64, len: i64| {
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Unpacking soroban map to ZVM linear memory."), false);
+                    
                     let effect = |host: soroban_env_host::Host| {
                         let mut vm_ctx = CustomVMCtx::new_mut(caller);
-                        let res: Result<_, soroban_env_host::HostError> = host
-                            .map_unpack_to_linear_memory_fn_mem(
+                        let res: Result<_, soroban_env_host::HostError> = (|| {
+                            host.map_unpack_to_linear_memory_fn_mem(
                                 &mut vm_ctx,
                                 MapObject::check_env_arg(
                                     MapObject::try_marshal_from_relative_value(
@@ -1085,15 +1193,23 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                 build_u32val(&host, keys_pos)?,
                                 build_u32val(&host, vals_pos)?,
                                 build_u32val(&host, len)?,
-                            );
+                            )
+                        })();
 
-                        with_frame(host, res)
+                        match with_frame(host, res) {
+                            Ok(val) => Ok((vm_ctx.into_inner(), val)),
+                            Err(host_error) => Err((vm_ctx.into_inner(), host_error)),
+                        }
                     };
 
                     let val = effect(host);
                     match val {
-                        Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Ok((_maybe_vm_ctx, val)) => val.get_payload() as i64,
+                        Err((maybe_caller, host_error)) => {
+                            if let Some(caller) = maybe_caller {
+                                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while unpacking soroban map to ZVM linear memory.", host_error), true);
+                            };
+
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -1114,10 +1230,13 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, vec: i64, vals_pos: i64, len: i64| {
                     let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Unpacking soroban vector to ZVM linear memory."), false);
+                    
                     let effect = |host: soroban_env_host::Host| {
                         let mut vm_ctx = CustomVMCtx::new_mut(caller);
-                        let res: Result<_, soroban_env_host::HostError> = host
-                            .vec_unpack_to_linear_memory_mem(
+                        let res: Result<_, soroban_env_host::HostError> = (|| {
+                            host.vec_unpack_to_linear_memory_mem(
                                 &mut vm_ctx,
                                 VecObject::check_env_arg(
                                     VecObject::try_marshal_from_relative_value(
@@ -1130,15 +1249,23 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                                 .unwrap(),
                                 build_u32val(&host, vals_pos)?,
                                 build_u32val(&host, len)?,
-                            );
+                            )
+                        })();
 
-                        with_frame(host, res)
+                        match with_frame(host, res) {
+                            Ok(val) => Ok((vm_ctx.into_inner(), val)),
+                            Err(host_error) => Err((vm_ctx.into_inner(), host_error)),
+                        }
                     };
 
                     let val = effect(host);
                     match val {
-                        Ok(val) => val.get_payload() as i64,
-                        _ => {
+                        Ok((_maybe_vm_ctx, val)) => val.get_payload() as i64,
+                        Err((maybe_caller, host_error)) => {
+                            if let Some(caller) = maybe_caller {
+                                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::SorobanEnvironment, format!("Hit error {:?} while creating soroban bytes from ZVM linear memory.", host_error), true);
+                            };
+
                             // todo log error.
                             // Note: this will panic on the guest.
                             0
@@ -1157,7 +1284,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let soroban_simulate_tx_fn = {
             let wrapped = Func::wrap(
                 &mut store,
-                |caller: Caller<_>,
+                |caller: Caller<Host<DB, L>>,
                  account_part_1: i64,
                  account_part_2: i64,
                  account_part_3: i64,
@@ -1171,7 +1298,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         account_part_4,
                     ]);
 
-                    let result = Host::simulate_soroban_transaction(caller, source, offset, size);
+                    let (caller, result) = Host::simulate_soroban_transaction(caller, source, offset, size);
                     if let Ok(res) = result {
                         (ZephyrStatus::Success as i64, res.0, res.1)
                     } else {

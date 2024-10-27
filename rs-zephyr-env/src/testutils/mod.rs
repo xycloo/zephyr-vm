@@ -12,9 +12,7 @@ pub(crate) mod database;
 pub(crate) mod symbol;
 
 use crate::{
-    host::{utils, Host},
-    vm::Vm,
-    ZephyrMock,
+    host::{utils, Host}, trace::StackTrace, vm::Vm, ZephyrMock
 };
 use anyhow::Result as AnyResult;
 use database::{LedgerReader, MercuryDatabase};
@@ -73,7 +71,8 @@ impl TestVM {
     }
 
     /// Invokes the selected function exported by the current ZephyrVM.
-    pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<String>, JoinError> {
+    // Note that we double-wrap the inner result to make the stack trace change backwards compatible.
+    pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<(AnyResult<String>, StackTrace)>, JoinError> {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let fname = fname.to_string();
         let wasm_path = self.wasm_path.clone();
@@ -82,6 +81,7 @@ impl TestVM {
         let invocation = tokio::runtime::Handle::current()
             .spawn_blocking(move || {
                 let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
+                host.set_stack_trace(true);
                 let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
                 host.load_context(Rc::downgrade(&vm)).unwrap();
                 host.add_transmitter(tx);
@@ -90,7 +90,10 @@ impl TestVM {
                     host.add_ledger_close_meta(meta).unwrap();
                 };
 
-                vm.metered_function_call(&host, &fname)
+                let result = vm.metered_function_call(&host, &fname);
+                let stack_trace = host.read_stack_trace();
+                
+                Ok((result, stack_trace))
             })
             .await;
 
