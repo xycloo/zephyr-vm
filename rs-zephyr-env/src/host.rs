@@ -616,7 +616,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         contract_part_4,
                     ]);
 
-                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::DatabaseImpl, format!("Reading contract data entry for contract {:?} and key with size of {}.", contract, size), false);
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(TracePoint::LedgerImpl, format!("Reading contract data entry for contract {:?} and key with size of {}.", contract, size), false);
 
                     let (caller, result) = Host::read_contract_data_entry_by_contract_id_and_key(
                         caller, contract, offset, size,
@@ -653,7 +653,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     ]);
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::LedgerImpl,
                         format!("Reading contract instance for contract {:?}.", contract),
                         false,
                     );
@@ -691,7 +691,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     ]);
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::LedgerImpl,
                         format!(
                             "Reading all non-instance contract entries for contract {:?}.",
                             contract
@@ -732,7 +732,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     ]);
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::LedgerImpl,
                         format!(
                             "Reading to soroban value all contract entries for contract {:?}.",
                             contract
@@ -773,7 +773,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     ]);
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::LedgerImpl,
                         format!("Fetching account {:?} from the ledger.", account),
                         false,
                     );
@@ -823,14 +823,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     };
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::SorobanEnvironment,
                         format!("Building ScVal from bytes {:?}.", bytes),
                         false,
                     );
                     let scval = ScVal::from_xdr(bytes, Limits::none()).unwrap();
 
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::SorobanEnvironment,
                         format!("Converting ScVal {:?} to a valid host value.", scval),
                         false,
                     );
@@ -841,7 +841,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                     } else {
                         let error = result.err();
                         caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                            TracePoint::DatabaseImpl,
+                            TracePoint::SorobanEnvironment,
                             format!(
                                 "Hit error {:?} while converting ScVal {:?} to a valid host value.",
                                 error, scval
@@ -863,7 +863,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let valid_host_val_to_scval = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, val: i64| {
                 caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                    TracePoint::DatabaseImpl,
+                    TracePoint::SorobanEnvironment,
                     format!("Converting host val {:?} to ScVal.", val),
                     false,
                 );
@@ -875,7 +875,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 } else {
                     let error = result.err();
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::SorobanEnvironment,
                         format!(
                             "Hit error {} while converting host val {:?} to ScVal.",
                             error.as_ref().unwrap(),
@@ -899,7 +899,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 &mut store,
                 |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::DatabaseImpl,
+                        TracePoint::ZephyrEnvironment,
                         format!("Writing object of size {:?} to result slot.", size),
                         false,
                     );
