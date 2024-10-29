@@ -559,7 +559,11 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 );
 
                 let (caller, result) = Host::read_database_self(caller);
-                let res = if let Some(err) = result.err() {
+
+                let res = if let Ok(res) = result {
+                    (ZephyrStatus::Success as i64, res.0, res.1)
+                } else {
+                    let err = result.err().unwrap();
                     caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
                         TracePoint::DatabaseImpl,
                         format!(
@@ -568,10 +572,10 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                         ),
                         true,
                     );
-                    ZephyrStatus::from(err) as i64
-                } else {
-                    ZephyrStatus::Success as i64
+                    (ZephyrStatus::from(err) as i64, 0, 0)
                 };
+
+                res
             });
 
             FunctionInfo {
