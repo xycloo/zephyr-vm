@@ -14,7 +14,7 @@ wasmi = { version = "0.32" }
 anyhow = "1.0.75"
 thiserror = "1.0.48"
 sha2 = "0.10.8"
-postgres = { version = "0.19.7", features = [
+postgres = { version = "=0.19.7", features = [
     "with-serde_json-1",
 ], optional = true }
 tokio-postgres = { version = "0.7.10", optional = true }
