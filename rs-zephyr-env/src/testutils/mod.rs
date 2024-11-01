@@ -76,6 +76,12 @@ impl TestVM {
         self.ledger_close_meta = Some(meta)
     }
 
+    /// Sets a new funciton body or replaces the existing one.
+    pub fn set_body(&mut self, body: String) {
+        let meta = bincode::serialize(&body).unwrap();
+        self.ledger_close_meta = Some(meta)
+    }
+
     /// Invokes the selected function exported by the current ZephyrVM.
     // Note that we double-wrap the inner result to make the stack trace change backwards compatible.
     pub async fn invoke_vm(
@@ -90,6 +96,7 @@ impl TestVM {
         let invocation = tokio::runtime::Handle::current()
             .spawn_blocking(move || {
                 let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
+                
                 host.set_stack_trace(true);
                 let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
                 host.load_context(Rc::downgrade(&vm)).unwrap();

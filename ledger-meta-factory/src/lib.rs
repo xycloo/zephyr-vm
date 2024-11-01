@@ -168,7 +168,7 @@ impl Transition {
             LedgerCloseMeta::V1(mut v1) => {
                 let GeneralizedTransactionSet::V1(mut v1_set) = v1.tx_set.clone();
 
-                let TransactionPhase::V0(v0phase) = v1_set.phases[0].clone();
+                let TransactionPhase::V0(v0phase) = v1_set.phases[0].clone() else {todo!()};
                 let v0phase_length = v0phase.len();
                 let mut v0phase = v0phase.to_vec();
 
