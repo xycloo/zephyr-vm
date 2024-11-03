@@ -41,8 +41,8 @@ log = "0.4.20"
 rusqlite = "0.31.0"
 stellar-strkey = "0.0.8"
 hex = "0.4.3"
-#ledger-meta-factory = { version = "0.1.2", path = "../ledger-meta-factory", optional = true }
-ledger-meta-factory = {  git = "https://github.com/xycloo/zephyr.git", branch="add-traces", optional = true }
+ledger-meta-factory = { version = "0.1.3", path = "../ledger-meta-factory", optional = true }
+#ledger-meta-factory = {  git = "https://github.com/xycloo/zephyr.git", branch="add-traces", optional = true }
 
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
