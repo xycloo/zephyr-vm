@@ -14,10 +14,10 @@ wasmi = { version = "0.32" }
 anyhow = "1.0.75"
 thiserror = "1.0.48"
 sha2 = "0.10.8"
-postgres = { version = "=0.19.7", features = [
+postgres = { version = "0.19.9", features = [
     "with-serde_json-1",
 ], optional = true }
-tokio-postgres = { version = "0.7.10", optional = true }
+tokio-postgres = { version = "0.7.12", optional = true }
 postgres-types = { version = "0.2.6", features = [
     "derive",
     "with-chrono-0_4",
@@ -49,7 +49,7 @@ package = "soroban-simulation-zephyr"
 #path = "../../rs-soroban-env/soroban-simulation"
 #branch = "stellar-main-2"
 git = "https://github.com/heytdep/rs-soroban-env"
-rev = "9791cab"
+rev = "f1359f2"
 #version = "21.2.2"
 
 [dependencies.stellar-xdr]
@@ -64,7 +64,7 @@ package = "soroban-env-host-zephyr"
 git = "https://github.com/heytdep/rs-soroban-env"
 #branch = "stellar-main-2"
 #version = "21.2.2"
-rev = "9791cab"
+rev = "f1359f2"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
@@ -72,7 +72,7 @@ package = "soroban-env-macros-zephyr"
 #path = "../../rs-soroban-env/soroban-env-macros"
 git = "https://github.com/heytdep/rs-soroban-env"
 #branch = "stellar-main-2"
-rev = "9791cab"
+rev = "f1359f2"
 #version = "21.2.2"
 
 
