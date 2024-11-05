@@ -24,7 +24,7 @@ use memory::CustomVMCtx;
 use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
 use soroban_env_host::budget::AsBudget;
 use soroban_env_host::xdr::{Hash, Limits, ReadXdr, ScAddress, ScVal};
-use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, VecObject, VmCaller};
+use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, Env, I128Object, VecObject, VmCaller};
 use soroban_env_host::{CheckedEnvArg, MapObject, Symbol, Val};
 use std::{
     borrow::BorrowMut,
@@ -1392,6 +1392,54 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let i128_from_pieces = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, obj: i64| {
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    println!("\n\n\ncalled");
+
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                        TracePoint::SorobanEnvironment,
+                        format!("I128 from pieces."),
+                        false,
+                    );
+
+                    0i64
+                },
+            );
+
+            FunctionInfo {
+                module: "i",
+                func: "8",
+                wrapped,
+            }
+        };
+
+        let i128_2 = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, obj: i64| {
+                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                    println!("\n\n\ncalled");
+
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                        TracePoint::SorobanEnvironment,
+                        format!("I128 from pieces."),
+                        false,
+                    );
+
+                    0i64
+                },
+            );
+
+            FunctionInfo {
+                module: "i",
+                func: "8",
+                wrapped,
+            }
+        };
+
         let vec_unpack_to_linear_memory_fn_mem = {
             let wrapped = Func::wrap(
                 &mut store,
@@ -1516,6 +1564,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             db_read_as_id_fn,
             read_account_from_ledger_fn,
             map_new_from_linear_memory_mem,
+
+            i128_from_pieces
         ];
 
         soroban_functions.append(&mut arr);
