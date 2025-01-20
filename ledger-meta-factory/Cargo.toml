@@ -1,6 +1,6 @@
 [package]
 name = "ledger-meta-factory"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2021"
 authors = ["Tommaso De Ponti @ xyclooLabs <tommaso@xycloo.com>"]
 description = "Utility for building customized Stellar ledger transitions."
@@ -17,6 +17,7 @@ anyhow = "1.0.75"
 
 [dev-dependencies]
 zephyr-sdk = { path = "../../rs-zephyr-sdk/zephyr-sdk" }
+#zephyr-sdk = {git = "https://github.com/xycloo/rs-zephyr-toolkit/", branch="stellar-main-2"}
 
 [dev-dependencies.soroban-sdk]
 version = "21.5.0"
@@ -24,7 +25,7 @@ features = ["alloc"]
 
 
 [dependencies.stellar-xdr]
-version = "=21.2.0"
+version = "=22.1.0"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features=["next", "curr", "serde", "base64"]

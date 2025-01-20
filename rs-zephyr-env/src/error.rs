@@ -1,3 +1,4 @@
+use soroban_env_host::Val;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -52,4 +53,7 @@ pub enum HostError {
 
     #[error("Error on the Soroban host side")]
     SorobanHost,
+
+    #[error("Error on the Soroban host side: {0:?}")]
+    SorobanHostWithContext(soroban_env_host::Error),
 }

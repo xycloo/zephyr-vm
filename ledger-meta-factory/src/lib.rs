@@ -3,8 +3,8 @@ use stellar_xdr::next::{
     ContractEvent, ContractEventV0, ExtensionPoint, GeneralizedTransactionSet, Hash,
     InvokeContractArgs, InvokeHostFunctionOp, LedgerCloseMeta, LedgerEntryChanges, Limits,
     Operation, OperationMeta, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
-    SorobanTransactionMeta, TimePoint, Transaction, TransactionEnvelope,
-    TransactionMeta, TransactionMetaV3, TransactionPhase, TransactionResult, TransactionResultExt,
+    SorobanTransactionMeta, TimePoint, Transaction, TransactionEnvelope, TransactionMeta,
+    TransactionMetaV3, TransactionPhase, TransactionResult, TransactionResultExt,
     TransactionResultMeta, TransactionResultPair, TransactionResultResult, TransactionV1Envelope,
     TxSetComponent, TxSetComponentTxsMaybeDiscountedFee, Uint256, WriteXdr,
 };
@@ -130,7 +130,7 @@ impl Transition {
         self.processing_append(txmeta);
     }
 
-    fn add_sample_soroban_envelope(&mut self, contract_id: Hash) {
+    pub fn add_sample_soroban_envelope(&mut self, contract_id: Hash) {
         let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
             tx: Transaction {
                 source_account: stellar_xdr::next::MuxedAccount::Ed25519(Uint256([0; 32])),
@@ -163,12 +163,12 @@ impl Transition {
         self.set_append(envelope)
     }
 
-    fn set_append(&mut self, tx: TransactionEnvelope) {
+    pub fn set_append(&mut self, tx: TransactionEnvelope) {
         match self.meta.clone() {
             LedgerCloseMeta::V1(mut v1) => {
                 let GeneralizedTransactionSet::V1(mut v1_set) = v1.tx_set.clone();
 
-                let TransactionPhase::V0(v0phase) = v1_set.phases[0].clone();
+                let TransactionPhase::V0(v0phase) = v1_set.phases[0].clone() else {todo!()};
                 let v0phase_length = v0phase.len();
                 let mut v0phase = v0phase.to_vec();
 
@@ -205,7 +205,7 @@ impl Transition {
         }
     }
 
-    fn processing_append(&mut self, meta: TransactionResultMeta) {
+    pub fn processing_append(&mut self, meta: TransactionResultMeta) {
         match self.meta.clone() {
             LedgerCloseMeta::V1(mut v1) => {
                 let mut tx_processing = v1.tx_processing.to_vec();

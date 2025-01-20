@@ -1,7 +1,7 @@
 //! Utilities for testing Zephyr programs and the ZephyrVM.
 //!
 //! Note: the testutils modules are not meant for production use rather for local usage.
-//! 
+//!
 //! Note:
 //! Testing on the ZephyrVM is currently quite difficult as the host doesn't spawn VMs.
 //! A Zephyr host is completely contained by the executing VM and cannot spawn other VMs
@@ -10,17 +10,21 @@
 //!
 pub(crate) mod database;
 pub(crate) mod symbol;
+pub use ledger_meta_factory::{Transition, TransitionPretty};
 
 use crate::{
     host::{utils, Host},
+    trace::StackTrace,
     vm::Vm,
     ZephyrMock,
 };
 use anyhow::Result as AnyResult;
 use database::{LedgerReader, MercuryDatabase};
-use ledger_meta_factory::Transition;
 use postgres::NoTls;
-use reqwest::{header::{HeaderMap, HeaderName}, Client};
+use reqwest::{
+    header::{HeaderMap, HeaderName},
+    Client,
+};
 use rs_zephyr_common::{http::Method, RelayedMessageRequest};
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc, str::FromStr};
 use symbol::Symbol;
@@ -72,8 +76,18 @@ impl TestVM {
         self.ledger_close_meta = Some(meta)
     }
 
+    /// Sets a new funciton body or replaces the existing one.
+    pub fn set_body(&mut self, body: String) {
+        let meta = bincode::serialize(&body).unwrap();
+        self.ledger_close_meta = Some(meta)
+    }
+
     /// Invokes the selected function exported by the current ZephyrVM.
-    pub async fn invoke_vm(&self, fname: impl ToString) -> Result<AnyResult<String>, JoinError> {
+    // Note that we double-wrap the inner result to make the stack trace change backwards compatible.
+    pub async fn invoke_vm(
+        &self,
+        fname: impl ToString,
+    ) -> Result<AnyResult<(AnyResult<String>, StackTrace)>, JoinError> {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let fname = fname.to_string();
         let wasm_path = self.wasm_path.clone();
@@ -82,6 +96,8 @@ impl TestVM {
         let invocation = tokio::runtime::Handle::current()
             .spawn_blocking(move || {
                 let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
+                
+                host.set_stack_trace(true);
                 let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
                 host.load_context(Rc::downgrade(&vm)).unwrap();
                 host.add_transmitter(tx);
@@ -90,7 +106,10 @@ impl TestVM {
                     host.add_ledger_close_meta(meta).unwrap();
                 };
 
-                vm.metered_function_call(&host, &fname)
+                let result = vm.metered_function_call(&host, &fname);
+                let stack_trace = host.read_stack_trace();
+
+                Ok((result, stack_trace))
             })
             .await;
 
@@ -174,10 +193,10 @@ impl Column {
     pub fn with_name_and_type(name: &impl ToString, col_type: String) -> Self {
         Column {
             name: name.to_string(),
-            col_type: col_type
+            col_type: col_type,
         }
     }
-} 
+}
 
 impl MercuryDatabaseSetup {
     /// Instantiate a new db object.
@@ -217,7 +236,7 @@ impl MercuryDatabaseSetup {
         id: i64,
         name: impl ToString,
         columns: Vec<impl ToString>,
-        native_types: Option<Vec<(usize, &str)>>
+        native_types: Option<Vec<(usize, &str)>>,
     ) -> anyhow::Result<()> {
         let id = utils::bytes::i64_to_bytes(id);
         let name_symbol = Symbol::try_from_bytes(name.to_string().as_bytes()).unwrap();
@@ -241,7 +260,7 @@ impl MercuryDatabaseSetup {
 
         let mut new_table_stmt = String::from(&format!("CREATE TABLE {} (", table_name));
 
-        let mut native_indexes =  HashMap::new();
+        let mut native_indexes = HashMap::new();
         if let Some(pairs) = native_types {
             for pair in pairs {
                 native_indexes.insert(pair.0, pair.1.to_string());
@@ -254,7 +273,7 @@ impl MercuryDatabaseSetup {
             } else {
                 Column::with_name(column)
             };
-            
+
             new_table_stmt.push_str(&format!("{} {}", column.name, column.col_type));
 
             if index < columns.len() - 1 {

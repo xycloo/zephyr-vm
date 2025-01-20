@@ -28,6 +28,10 @@ impl<'a, DB: ZephyrDatabase + 'static, L: LedgerStateRead + 'static> CustomVMCtx
             caller_mut: Some(ctx),
         }
     }
+
+    pub fn into_inner(self) -> Option<Caller<'a, Host<DB, L>>> {
+        self.caller_mut
+    }
 }
 
 impl<'a, DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> CustomContextVM
@@ -86,38 +90,45 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         memory
     }
 
-    pub(crate) fn write_to_memory(mut caller: Caller<Self>, contents: &[u8]) -> Result<(i64, i64)> {
-        let (memory, offset, data) = {
-            let host = caller.data();
+    pub(crate) fn write_to_memory(
+        mut caller: Caller<Self>,
+        contents: Vec<u8>,
+    ) -> (Caller<Self>, Result<(i64, i64)>) {
+        let effect = (|| {
+            let (memory, offset, data) = {
+                let host = caller.data();
 
-            let context = host.0.context.borrow();
-            let vm = context
-                .vm
-                .as_ref()
-                .ok_or_else(|| HostError::NoContext)?
-                .upgrade()
-                .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
+                let context = host.0.context.borrow();
+                let vm = context
+                    .vm
+                    .as_ref()
+                    .ok_or_else(|| HostError::NoContext)?
+                    .upgrade()
+                    .ok_or_else(|| HostError::InternalError(InternalError::CannotUpgradeRc))?;
 
-            let manager = &vm.memory_manager;
-            let memory = manager.memory;
+                let manager = &vm.memory_manager;
+                let memory = manager.memory;
 
-            let mut offset_mut = manager.offset.borrow_mut();
-            let new_offset = offset_mut
-                .checked_add(contents.len())
-                .ok_or_else(|| HostError::InternalError(InternalError::ArithError))?;
+                let mut offset_mut = manager.offset.borrow_mut();
+                let new_offset = offset_mut
+                    .checked_add(contents.len())
+                    .ok_or_else(|| HostError::InternalError(InternalError::ArithError))?;
 
-            *offset_mut = new_offset;
+                *offset_mut = new_offset;
 
-            (memory, new_offset, contents)
-        };
+                (memory, new_offset, contents)
+            };
 
-        Self::grow_memory_pages_if_needed(memory, &mut caller, data.len());
+            Self::grow_memory_pages_if_needed(memory, &mut caller, data.len());
 
-        if let Err(error) = memory.write(&mut caller, data.len(), data) {
-            return Err(anyhow!(error));
-        };
+            if let Err(error) = memory.write(&mut caller, data.len(), data.as_slice()) {
+                return Err(anyhow!(error));
+            };
 
-        Ok((data.len() as i64, data.len() as i64))
+            Ok((data.len() as i64, data.len() as i64))
+        })();
+
+        (caller, effect)
     }
 
     pub(crate) fn write_to_memory_mut(
@@ -127,7 +138,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     ) -> Result<i64> {
         let memory = Self::get_memory(caller);
         Self::grow_memory_pages_if_needed(memory, caller, contents.len());
-        
+
         if let Err(error) = memory.write(caller, pos as usize, contents) {
             return Err(anyhow!(error));
         };
@@ -148,10 +159,18 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         Ok(written_vec)
     }
 
-    pub(crate) fn grow_memory_pages_if_needed(memory: Memory, caller: &mut Caller<Self>, buf_len: usize) {
+    pub(crate) fn grow_memory_pages_if_needed(
+        memory: Memory,
+        caller: &mut Caller<Self>,
+        buf_len: usize,
+    ) {
         // Estimating free allocated memory.
-        let current_estimated_free = memory.data(&caller).iter().filter(|byte| **byte == 0x00_u8).count();
-        
+        let current_estimated_free = memory
+            .data(&caller)
+            .iter()
+            .filter(|byte| **byte == 0x00_u8)
+            .count();
+
         if current_estimated_free < buf_len + KEEP_FREE {
             let _ = memory.grow(caller, Pages::new(100).unwrap());
         }

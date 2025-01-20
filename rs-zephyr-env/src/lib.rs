@@ -11,6 +11,7 @@ pub mod snapshot;
 pub mod budget;
 pub mod db;
 pub mod host;
+mod trace;
 pub mod vm;
 
 pub use wasmi::Instance;
