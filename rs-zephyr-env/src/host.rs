@@ -603,6 +603,98 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
+        let conclude_fn = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
+                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                        TracePoint::ZephyrEnvironment,
+                        format!("Writing object of size {:?} to result slot.", size),
+                        false,
+                    );
+                    Host::write_result(caller, offset, size).unwrap();
+                },
+            );
+
+            FunctionInfo {
+                module: "env",
+                func: "conclude",
+                wrapped,
+            }
+        };
+
+        let send_message_fn = {
+            let wrapped = Func::wrap(
+                &mut store,
+                |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
+                    let result = Host::send_message(caller, offset, size);
+
+                    if let Ok(_) = result {
+                        ZephyrStatus::Success as i64
+                    } else {
+                        ZephyrStatus::from(result.err().unwrap()) as i64
+                    }
+                },
+            );
+
+            FunctionInfo {
+                module: "env",
+                func: "tx_send_message",
+                wrapped,
+            }
+        };
+
+        let log_fn = {
+            let wrapped = Func::wrap(&mut store, |_: Caller<Host<DB, L>>, param: i64| {
+                println!("Logged: {}", param);
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "zephyr_logger",
+                wrapped,
+            }
+        };
+
+        let stack_push_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, param: i64| {
+                let host: &Host<DB, L> = caller.data();
+                host.as_stack_mut().0.push(param);
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "zephyr_stack_push",
+                wrapped,
+            }
+        };
+
+        let read_ledger_meta_fn = {
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
+                if let Ok(res) = Host::read_ledger_meta(caller) {
+                    res
+                } else {
+                    // this is also unsafe
+                    // panic!()
+
+                    // current implementation is faulty
+                    // and only serves mocked testing
+                    // purposes. Any attempt to run
+                    // Zephyr without providing the latest
+                    // close meta has a high probability of
+                    // breaking.
+
+                    (0, 0)
+                }
+            });
+
+            FunctionInfo {
+                module: "env",
+                func: "read_ledger_meta",
+                wrapped,
+            }
+        };
+
         let read_contract_data_entry_by_contract_id_and_key_fn = {
             let wrapped = Func::wrap(
                 &mut store,
@@ -798,7 +890,46 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 wrapped,
             }
         };
+        
+        let use_soroban_functions = true;
 
+        let mut all_exports = if use_soroban_functions {
+            soroban_host_gen::generate_host_fn_infos(store)
+        } else {
+            vec![]
+        };
+
+        let mut arr = vec![
+            db_write_fn,
+            db_read_fn,
+            db_update_fn,
+            log_fn,
+            stack_push_fn,
+            read_ledger_meta_fn,
+            read_contract_data_entry_by_contract_id_and_key_fn,
+            read_contract_instance_fn,
+            read_contract_entries_fn,
+            read_contract_entries_to_env_fn,
+            conclude_fn,
+            send_message_fn,
+            db_read_as_id_fn,
+            read_account_from_ledger_fn,            
+        ];
+
+        all_exports.append(&mut arr);
+        if use_soroban_functions {
+            all_exports.append(&mut Self::soroban_adjusted(store));
+        }
+        
+        // we reverse because we let the linker error when adding the original soroban functions.
+        // we should probably just trim the soroban host function generation and exclude the functions
+        // we tamper with in `soroban_adjusted`.
+        all_exports.reverse();
+
+        all_exports
+    }
+
+    fn soroban_adjusted(mut store: &mut Store<Host<DB, L>>) -> Vec<FunctionInfo> {
         let scval_to_valid_host_val = {
             let wrapped = Func::wrap(
                 &mut store,
@@ -863,7 +994,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 wrapped,
             }
         };
-
+        
         let valid_host_val_to_scval = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, val: i64| {
                 caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
@@ -894,98 +1025,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             FunctionInfo {
                 module: "env",
                 func: "valid_host_val_to_scval",
-                wrapped,
-            }
-        };
-
-        let conclude_fn = {
-            let wrapped = Func::wrap(
-                &mut store,
-                |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
-                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::ZephyrEnvironment,
-                        format!("Writing object of size {:?} to result slot.", size),
-                        false,
-                    );
-                    Host::write_result(caller, offset, size).unwrap();
-                },
-            );
-
-            FunctionInfo {
-                module: "env",
-                func: "conclude",
-                wrapped,
-            }
-        };
-
-        let send_message_fn = {
-            let wrapped = Func::wrap(
-                &mut store,
-                |caller: Caller<Host<DB, L>>, offset: i64, size: i64| {
-                    let result = Host::send_message(caller, offset, size);
-
-                    if let Ok(_) = result {
-                        ZephyrStatus::Success as i64
-                    } else {
-                        ZephyrStatus::from(result.err().unwrap()) as i64
-                    }
-                },
-            );
-
-            FunctionInfo {
-                module: "env",
-                func: "tx_send_message",
-                wrapped,
-            }
-        };
-
-        let log_fn = {
-            let wrapped = Func::wrap(&mut store, |_: Caller<Host<DB, L>>, param: i64| {
-                println!("Logged: {}", param);
-            });
-
-            FunctionInfo {
-                module: "env",
-                func: "zephyr_logger",
-                wrapped,
-            }
-        };
-
-        let stack_push_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, param: i64| {
-                let host: &Host<DB, L> = caller.data();
-                host.as_stack_mut().0.push(param);
-            });
-
-            FunctionInfo {
-                module: "env",
-                func: "zephyr_stack_push",
-                wrapped,
-            }
-        };
-
-        let read_ledger_meta_fn = {
-            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>| {
-                if let Ok(res) = Host::read_ledger_meta(caller) {
-                    res
-                } else {
-                    // this is also unsafe
-                    // panic!()
-
-                    // current implementation is faulty
-                    // and only serves mocked testing
-                    // purposes. Any attempt to run
-                    // Zephyr without providing the latest
-                    // close meta has a high probability of
-                    // breaking.
-
-                    (0, 0)
-                }
-            });
-
-            FunctionInfo {
-                module: "env",
-                func: "read_ledger_meta",
                 wrapped,
             }
         };
@@ -1416,30 +1455,6 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
-        let i128_2 = {
-            let wrapped = Func::wrap(
-                &mut store,
-                |caller: Caller<Host<DB, L>>, obj: i64| {
-                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    println!("\n\n\ncalled");
-
-                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::SorobanEnvironment,
-                        format!("I128 from pieces."),
-                        false,
-                    );
-
-                    0i64
-                },
-            );
-
-            FunctionInfo {
-                module: "i",
-                func: "8",
-                wrapped,
-            }
-        };
-
         let vec_unpack_to_linear_memory_fn_mem = {
             let wrapped = Func::wrap(
                 &mut store,
@@ -1535,23 +1550,9 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             }
         };
 
-        let mut soroban_functions = soroban_host_gen::generate_host_fn_infos(store);
-
-        let mut arr = vec![
-            db_write_fn,
-            db_read_fn,
-            db_update_fn,
-            log_fn,
-            stack_push_fn,
-            read_ledger_meta_fn,
-            read_contract_data_entry_by_contract_id_and_key_fn,
-            read_contract_instance_fn,
-            read_contract_entries_fn,
+        vec![
             scval_to_valid_host_val,
             valid_host_val_to_scval,
-            read_contract_entries_to_env_fn,
-            conclude_fn,
-            send_message_fn,
             string_from_linmem,
             symbol_index_from_linmem,
             vec_new_from_linear_memory_mem,
@@ -1561,16 +1562,8 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             vec_unpack_to_linear_memory_fn_mem,
             soroban_simulate_tx_fn,
             bytes_copy_to_linear_memory_mem,
-            db_read_as_id_fn,
-            read_account_from_ledger_fn,
             map_new_from_linear_memory_mem,
-
             i128_from_pieces
-        ];
-
-        soroban_functions.append(&mut arr);
-        soroban_functions.reverse();
-
-        soroban_functions
+        ]
     }
 }
