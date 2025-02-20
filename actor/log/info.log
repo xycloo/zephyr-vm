@@ -1,0 +1,67 @@
+2025-02-20T14:37:47.003255-03:00 - Booting up service for network Testnet
+2025-02-20T14:37:47.003787-03:00 - Starting to receive streamed ledger metas from stellar core
+2025-02-20T14:37:47.066159-03:00 - Started online streaming.
+2025-02-20T14:37:59.083140-03:00 - Booting up service for network Testnet
+2025-02-20T14:37:59.083404-03:00 - Starting to receive streamed ledger metas from stellar core
+2025-02-20T14:38:18.034966-03:00 - Started online streaming.
+2025-02-20T14:39:28.780022-03:00 - Got new meta object.
+2025-02-20T14:42:26.847095-03:00 - Booting up service for network Testnet
+2025-02-20T14:43:20.428966-03:00 - Booting up service for network Testnet
+2025-02-20T14:45:18.741369-03:00 - Booting up service for network Testnet
+2025-02-20T14:45:18.741919-03:00 - Got new meta object.
+2025-02-20T14:45:18.742202-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:19.744417-03:00 - Got new meta object.
+2025-02-20T14:45:19.744792-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:20.746157-03:00 - Got new meta object.
+2025-02-20T14:45:20.746440-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:21.748590-03:00 - Got new meta object.
+2025-02-20T14:45:21.748869-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:22.751031-03:00 - Got new meta object.
+2025-02-20T14:45:22.751204-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:23.753272-03:00 - Got new meta object.
+2025-02-20T14:45:23.753605-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:24.755105-03:00 - Got new meta object.
+2025-02-20T14:45:24.755336-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:25.757610-03:00 - Got new meta object.
+2025-02-20T14:45:25.757849-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:26.759780-03:00 - Got new meta object.
+2025-02-20T14:45:26.759970-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:27.761930-03:00 - Got new meta object.
+2025-02-20T14:45:27.762261-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:28.764589-03:00 - Got new meta object.
+2025-02-20T14:45:28.764883-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:29.767657-03:00 - Got new meta object.
+2025-02-20T14:45:29.767819-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:30.770111-03:00 - Got new meta object.
+2025-02-20T14:45:30.770390-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:31.772724-03:00 - Got new meta object.
+2025-02-20T14:45:31.773040-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:32.775028-03:00 - Got new meta object.
+2025-02-20T14:45:32.775353-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:33.777594-03:00 - Got new meta object.
+2025-02-20T14:45:33.778019-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:36.333078-03:00 - Booting up service for network Testnet
+2025-02-20T14:45:36.333158-03:00 - Got new meta object.
+2025-02-20T14:45:36.333222-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:37.335039-03:00 - Got new meta object.
+2025-02-20T14:45:37.335184-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:38.338190-03:00 - Got new meta object.
+2025-02-20T14:45:38.338509-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:39.339847-03:00 - Got new meta object.
+2025-02-20T14:45:39.340203-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:40.342533-03:00 - Got new meta object.
+2025-02-20T14:45:40.342937-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:41.344087-03:00 - Got new meta object.
+2025-02-20T14:45:41.344397-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:42.346624-03:00 - Got new meta object.
+2025-02-20T14:45:42.346832-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:43.348414-03:00 - Got new meta object.
+2025-02-20T14:45:43.348617-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:44.351196-03:00 - Got new meta object.
+2025-02-20T14:45:44.351533-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:45.353981-03:00 - Got new meta object.
+2025-02-20T14:45:45.354321-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:46.356709-03:00 - Got new meta object.
+2025-02-20T14:45:46.356925-03:00 - Forwarding meta object via WebSocket.
+2025-02-20T14:45:47.359108-03:00 - Got new meta object.
+2025-02-20T14:45:47.359352-03:00 - Forwarding meta object via WebSocket.

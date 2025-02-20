@@ -1,0 +1,19 @@
+[package]
+name = "sync"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ingest = {version = "0.1.1", path = "../../../rs-ingest" }
+tokio = {workspace=true}
+log4rs = "1.2.0"
+log = "0.4.20"
+toml = "0.8.9"
+serde = {workspace=true}
+serde_json = {workspace=true}
+stellar-xdr = {workspace=true}
+reqwest = {workspace=true}
+tokio-tungstenite = "0.16"
+futures = "0.3"
+url = "2"
+warp = "0.3.7"
