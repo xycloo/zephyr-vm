@@ -1,5 +1,5 @@
 {
-    "mercury_jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYXV0aDA2NmNjNGUzZjc3NjE3Njc4YWI4ZmMyYmYiLCJleHAiOjE3NDM1MzQ0NzQsInVzZXJfaWQiOjExMywidXNlcm5hbWUiOiJ0b21tYXNvZGVwb250aUB6b2hvbWFpbC5ldSIsImlhdCI6MTc0MDk0MjQ3NCwiYXVkIjoicG9zdGdyYXBoaWxlIiwiaXNzIjoicG9zdGdyYXBoaWxlIn0.KuZxK1GqAIuddFSwDYGaY-kTgaYtexTLD7lsJrg4FsQ",
+    "mercury_jwt": "",
     "network": "Test SDF Network ; September 2015",
     "contracts": ["CDX5BSJVHHSD77EQTSINZ7W32ON674RM6HLKOI35IKTGPBDCWQRIUU3Z"],
     "topic1s": [],
