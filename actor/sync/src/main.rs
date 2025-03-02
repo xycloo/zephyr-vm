@@ -86,30 +86,9 @@ async fn handle_connection(ws: WebSocket, ws_sender: broadcast::Sender<Message>)
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    log4rs::init_file("./config/log4rs.yml", Default::default()).unwrap();
-    let project_definition = fs::read_to_string("./config/mercury.toml").await.unwrap();
-    let config: Config = toml::from_str(&project_definition).unwrap();
-
-    let network = if config.network == PUBNET {
-        SupportedNetwork::Pubnet
-    } else {
-        SupportedNetwork::Testnet
-    };
-
-    log::info!(target: "info", "Booting up service for network {:?}", network);
-
-    let ingestion_config = IngestionConfig {
-        executable_path: "/usr/local/bin/stellar-core".to_string(),
-        context_path: Default::default(),
-        network,
-        bounded_buffer_size: None,
-        staggered: None,
-    };
-
-    let mut captive = CaptiveCore::new(ingestion_config);
-    log::info!(target: "info", "Starting to receive streamed ledger metas from stellar core");
-    let mut rv = captive.async_start_online_no_range().await?;
-    log::info!(target: "info", "Started online streaming.");
+    use tokio::task::LocalSet;
+    use std::sync::Arc;
+    use tokio::sync::broadcast;
 
     let (ws_broadcast, _) = broadcast::channel(32);
     let ws_broadcast = Arc::new(ws_broadcast);
@@ -121,7 +100,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
     };
 
-    let handle = tokio::spawn(async move {
+    let local = LocalSet::new();
+    local.run_until(async move {
+        log4rs::init_file("./config/log4rs.yml", Default::default()).unwrap();
+        let project_definition = fs::read_to_string("./config/mercury.toml").await.unwrap();
+        let config: Config = toml::from_str(&project_definition).unwrap();
+
+        let network = if config.network == PUBNET {
+            SupportedNetwork::Pubnet
+        } else {
+            SupportedNetwork::Testnet
+        };
+
+        log::info!(target: "info", "Booting up service for network {:?}", network);
+
+        let ingestion_config = IngestionConfig {
+            executable_path: "/usr/local/bin/stellar-core".to_string(),
+            context_path: Default::default(),
+            network,
+            bounded_buffer_size: None,
+            staggered: None,
+        };
+
+        let mut captive = CaptiveCore::new(ingestion_config);
+        log::info!(target: "info", "Starting to receive streamed ledger metas from stellar core");
+        let mut rv = captive.async_start_online_no_range().await.expect("failed to start ingesting");
+        log::info!(target: "info", "Started online streaming.");
+
         while let Some(result) = rv.recv().await {
             log::info!(target: "info", "Got new meta object.");
             let ledger = if let Some(ledger_wrapper) = result.ledger_close_meta {
@@ -131,17 +136,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 captive.close_runner_process().unwrap();
                 std::process::exit(0);
             };
-    
+
             let encoded = ledger.to_xdr(Limits::none()).unwrap();
             let body = SyncRequest { meta: encoded };
-    
+
             let json_body = serde_json::to_string(&body).unwrap();
             log::info!(target: "info", "Forwarding meta object via WebSocket.");
-            let _ = ws_broadcast.send(Message::text(json_body));
+            let sent = ws_broadcast.send(Message::text(json_body));
         }
-    });
-    
-    let _ = tokio::join!(handle, ws_server_handle);
+    }).await;
+
+    let _ = tokio::join!(ws_server_handle);
 
     Ok(())
 }
+

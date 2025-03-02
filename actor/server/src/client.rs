@@ -26,6 +26,7 @@ pub async fn do_catchups_on_events(
     start_ledger: i64,
 ) -> i64 {
     let mut all_events_by_ledger: BTreeMap<i64, (i64, Vec<EventNode>)> = BTreeMap::new();
+    
 
     for event in events_response.eventByContractIds.nodes {
         let seq = event.txInfoByTx.ledgerByLedger.sequence;
@@ -38,25 +39,26 @@ pub async fn do_catchups_on_events(
 
     println!("got {} ledgers to process", all_events_by_ledger.len());
     let mut latest_ledger = start_ledger;
-
-    for (&ledger, &(time, ref event_set)) in &all_events_by_ledger {
-        let meta = LedgerCloseMeta::from_xdr_base64(sample_ledger(), Limits::none())
-            .expect("failed to decode ledger");
+    for (ledger, (time, event_set)) in all_events_by_ledger.iter() {
+        let meta = LedgerCloseMeta::from_xdr_base64(sample_ledger(), Limits::none()).unwrap();
         let mut v1 = if let LedgerCloseMeta::V1(mut v1) = meta {
-            v1.ledger_header.header.ledger_seq = ledger as u32;
-            v1.ledger_header.header.scp_value.close_time = TimePoint(time as u64);
+            v1.ledger_header.header.ledger_seq = *ledger as u32;
+            v1.ledger_header.header.scp_value.close_time = TimePoint(*time as u64);
             v1
         } else {
             panic!()
         };
 
-        let mut tx_processing = v1.tx_processing.to_vec();
+        let mut mut_tx_processing = v1.tx_processing.to_vec();
+        mut_tx_processing.clear();
 
         for event in event_set {
-            let event_tx_hash = BASE64_STANDARD
-                .decode(&event.txInfoByTx.txHash)
-                .map(to_txhash)
-                .unwrap_or([0; 32]);
+            let event_tx_hash = {
+                let vec = BASE64_STANDARD
+                    .decode(&event.txInfoByTx.txHash)
+                    .unwrap_or([0; 32].to_vec());
+                to_txhash(vec)
+            };
 
             let result = TransactionResultMeta {
                 result: TransactionResultPair {
@@ -94,22 +96,22 @@ pub async fn do_catchups_on_events(
                                     ContractEventV0 {
                                         topics: vec![
                                             ScVal::from_xdr_base64(
-                                                event.topic1.clone().unwrap_or_default(),
+                                                event.topic1.clone().unwrap_or("".into()),
                                                 Limits::none(),
                                             )
                                             .unwrap_or(ScVal::Void),
                                             ScVal::from_xdr_base64(
-                                                event.topic2.clone().unwrap_or_default(),
+                                                event.topic2.clone().unwrap_or("".into()),
                                                 Limits::none(),
                                             )
                                             .unwrap_or(ScVal::Void),
                                             ScVal::from_xdr_base64(
-                                                event.topic3.clone().unwrap_or_default(),
+                                                event.topic3.clone().unwrap_or("".into()),
                                                 Limits::none(),
                                             )
                                             .unwrap_or(ScVal::Void),
                                             ScVal::from_xdr_base64(
-                                                event.topic4.clone().unwrap_or_default(),
+                                                event.topic4.clone().unwrap_or("".into()),
                                                 Limits::none(),
                                             )
                                             .unwrap_or(ScVal::Void),
@@ -131,10 +133,10 @@ pub async fn do_catchups_on_events(
                 ),
             };
 
-            tx_processing.push(result);
+            mut_tx_processing.push(result)
         }
 
-        v1.tx_processing = tx_processing.try_into().unwrap();
+        v1.tx_processing = mut_tx_processing.try_into().unwrap();
         let ledger_close_meta = LedgerCloseMeta::V1(v1);
         let function = FInput {
             associated_data: ledger_close_meta
@@ -152,9 +154,8 @@ pub async fn do_catchups_on_events(
             println!("Got error {:?} while executing function", e);
         }
 
-        latest_ledger = ledger;
+        latest_ledger = *ledger
     }
 
     latest_ledger
 }
-
