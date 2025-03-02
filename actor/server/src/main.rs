@@ -1,10 +1,13 @@
 use base64::prelude::*;
+use client::EventFeed;
 use sha2::{Digest, Sha256};
-use tokio::{fs, process::Command};
+use tokio::{fs, process::Command, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 use tokio_tungstenite::connect_async;
 use futures::StreamExt;
 use url::Url;
 use serde::{Deserialize, Serialize};
+
+mod client;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SyncRequest {
@@ -27,11 +30,11 @@ pub struct Config {
 
 #[derive(Deserialize, Serialize)]
 pub struct FInput {
-    associated_data: Vec<u8>,
-    binary: BinaryType,
-    user_id: u64,
-    network_id: [u8; 32],
-    fname: String
+    pub associated_data: Vec<u8>,
+    pub binary: BinaryType,
+    pub user_id: u64,
+    pub network_id: [u8; 32],
+    pub fname: String
 }
 
 async fn get_network_id_from_env() -> [u8; 32] {
@@ -43,75 +46,115 @@ async fn get_network_id_from_env() -> [u8; 32] {
     hasher.finalize().as_slice().try_into().unwrap()
 }
 
-#[tokio::main]
-async fn main() {
+async fn fill_metas(tx: UnboundedSender<Vec<u8>>) {
     let url = Url::parse("ws://127.0.0.1:4000/ws").unwrap();
     let (ws_stream, _) = connect_async(url)
         .await
         .expect("Failed to connect to the server");
     println!("Connected to the server.");
-
     let (_, mut read) = ws_stream.split();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    
+    while let Some(message) = read.next().await {
+        match message {
+            Ok(msg) if msg.is_text() => {
+                let text = msg.to_text().unwrap();
+                println!("Received raw message: {}", text);
 
-    let fill_metas = tokio::spawn(async move {
-        while let Some(message) = read.next().await {
-            match message {
-                Ok(msg) if msg.is_text() => {
-                    let text = msg.to_text().unwrap();
-                    println!("Received raw message: {}", text);
+                match serde_json::from_str::<SyncRequest>(text) {
+                    Ok(sync_req) => {
+                        println!(
+                            "Received SyncRequest with meta length: {} bytes",
+                            sync_req.meta.len()
+                        );
 
-                    match serde_json::from_str::<SyncRequest>(text) {
-                        Ok(sync_req) => {
-                            println!(
-                                "Received SyncRequest with meta length: {} bytes",
-                                sync_req.meta.len()
-                            );
-
-                            let _ = tx.send(sync_req.meta);
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to parse SyncRequest: {:?}", e);
-                        }
+                        let _ = tx.send(sync_req.meta);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to parse SyncRequest: {:?}", e);
                     }
                 }
-                Ok(msg) if msg.is_close() => {
-                    println!("Server closed the connection.");
-                    break;
-                }
-                Ok(_) => {
-                    //
-                }
-                Err(e) => {
-                    eprintln!("Error receiving message: {:?}", e);
-                    break;
-                }
+            }
+            Ok(msg) if msg.is_close() => {
+                println!("Server closed the connection.");
+                break;
+            }
+            Ok(_) => {
+                //
+            }
+            Err(e) => {
+                eprintln!("Error receiving message: {:?}", e);
+                break;
             }
         }
-    });
+    }
+}
 
-    let spawn_executor = tokio::spawn(async move {
-        // NB: subprocess exec makes it simpler to control the constraints.
-        while let Some(data) = rx.recv().await {
-            let function = FInput {
-                associated_data: data,
-                user_id: 0,
-                network_id: get_network_id_from_env().await,
-                fname: "on_close".into(),
-                binary: BinaryType::Path(std::env::var("WASM_PATH").expect("missing WASM_PATH from enviornment"))
-            };
-            
-            let serialized = bincode::serialize(&function).unwrap();
-            let encoded = BASE64_STANDARD.encode(&serialized);
+async fn meta_executor(rx: &mut UnboundedReceiver<Vec<u8>>) {
+    // NB: subprocess exec makes it simpler to control the constraints.
+    while let Some(data) = rx.recv().await {
+        let function = FInput {
+            associated_data: data,
+            user_id: 0,
+            network_id: get_network_id_from_env().await,
+            fname: "on_close".into(),
+            binary: BinaryType::Path(std::env::var("WASM_PATH").expect("missing WASM_PATH from enviornment"))
+        };
+        
+        let _ = execute_function(function).await;
+    }
+}
 
-            let child = Command::new(std::env::var("BINARY_PATH").expect("missing BINARY_PATH from enviornment"))
-                .arg(encoded)
-                .spawn().unwrap();
+async fn execute_function(function: FInput) -> anyhow::Result<()> {
+    let serialized = bincode::serialize(&function).unwrap();
+    let encoded = BASE64_STANDARD.encode(&serialized);
 
-            let output = child.wait_with_output().await;
-            println!("Subprocess: {:?}", output);
-        }
-    });
+    let child = Command::new(std::env::var("BINARY_PATH").expect("missing BINARY_PATH from enviornment"))
+        .arg(encoded)
+        .spawn().unwrap();
 
-    tokio::join!(fill_metas, spawn_executor);
+    let output = child.wait_with_output().await?;
+    println!("Subprocess: {:?}", output);
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct CatchupConfig {
+    mercury_jwt: String,
+    network: String,
+    contracts: Vec<String>,
+    topic1s: Vec<String>,
+    topic2s: Vec<String>,
+    topic3s: Vec<String>,
+    topic4s: Vec<String>,
+    start: i64,
+}
+
+
+#[tokio::main]
+async fn main() {
+    let server_action: String = std::env::args().nth(1).unwrap_or_default();
+    
+    if server_action == "catchup" {
+        println!("Starting catchup job, reading config.json");
+        let config: CatchupConfig = serde_json::from_str(&tokio::fs::read_to_string("config.json").await.expect("No config.json found.")).expect("Invalid config.json format.");
+        println!("Retrieving events (using mercury plug)");
+        let plug = client::mercury::MercuryClient {
+            network: config.network,
+            jwt: config.mercury_jwt
+        };
+        let events = plug.events(config.contracts, [config.topic1s, config.topic2s, config.topic3s, config.topic4s], config.start).await.expect("failed to retreive events");
+        let last_ledger_processed = client::do_catchups_on_events(events.data, config.start).await;
+        println!("Finished catchup, processed until ledger {}", last_ledger_processed);
+    } else {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let fill_metas = tokio::spawn(async move {
+            fill_metas(tx).await
+        });
+        let spawn_executor = tokio::spawn(async move {
+            meta_executor(&mut rx).await
+        });
+
+        let _ = tokio::join!(fill_metas, spawn_executor);
+    }
 }
