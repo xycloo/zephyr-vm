@@ -8,6 +8,7 @@ members = [
     #, "wasm-tests/soroban-host",
     "ledger-meta-factory", "executor", "actor/server", "actor/sync",
 ]
+exclude = ["actor/example"]
 
 [workspace.dependencies]
 zephyr-vm = {path="./rs-zephyr-env"}
