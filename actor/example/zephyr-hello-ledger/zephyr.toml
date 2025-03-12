@@ -1,0 +1,16 @@
+name = "zephyr-hello-ledger"
+project = "hello-ledger"
+
+[[tables]]
+name = "curr_seq"
+force = true
+
+[[tables.columns]]
+name = "current"
+col_type = "BIGINT"
+index = true
+
+[[tables.columns]]
+name = "id"
+col_type = "BIGINT"
+primary = true
