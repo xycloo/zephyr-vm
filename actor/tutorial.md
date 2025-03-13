@@ -136,7 +136,7 @@ Before the sync client and execution server can operate, Stellar Core needs to i
 
 **Steps:**
 
-Navigate to the temporary ingestion directory (or the directory your team uses for this step) and run:
+Navigate to the temporary ingestion directory and run:
 
 ```bash
 cd /tmp/rs_ingestion_temp
@@ -216,7 +216,7 @@ This step builds and launches the multiuser logging service, which collects log 
    Set the database connection string and start the logging service by running:
 
    ```bash
-   DB="host=127.0.0.1 dbname=zephyr_db user=federicodeponti" ./target/release/zephyr_service_storage
+   DB="host=127.0.0.1 dbname=zephyr_db user=your_username" ./target/release/zephyr_service_storage
    ```
 
    The logs will be stored in the `mercury_user_logs` table of the database.
