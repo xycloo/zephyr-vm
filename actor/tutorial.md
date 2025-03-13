@@ -1,6 +1,6 @@
 # Self‑Hosting Mercury Zephyr: A Step‑by‑Step Tutorial
 
-This tutorial will walk you through the entire process of setting up a self‑hosted Zephyr environment. You’ll learn how to install and run Stellar Core (for streaming ledger events), clone and build the necessary Mercury‑Zephyr repositories, set up PostgreSQL for ingestion, and compile and run an example Zephyr program using WebAssembly.
+This tutorial will walk you through the entire process of setting up a self‑hosted Zephyr environment. You’ll learn how to install and run Stellar Core (for streaming ledger events), clone and build the necessary Mercury‑Zephyr repositories, set up PostgreSQL for ingestion, and compile and run an example Zephyr program.
 
 ## Prerequisites:
 
