@@ -1,12 +1,12 @@
+use futures::{SinkExt, StreamExt};
 use ingest::{CaptiveCore, IngestionConfig, SupportedNetwork};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use stellar_xdr::next::{Limits, WriteXdr};
 use tokio::fs;
-use futures::{StreamExt, SinkExt};
-use warp::filters::ws::Message;
-use warp::{Filter, ws::WebSocket};
 use tokio::sync::broadcast;
-use std::sync::Arc;
+use warp::filters::ws::Message;
+use warp::{ws::WebSocket, Filter};
 
 const PUBNET: &str = "Public Global Stellar Network ; September 2015";
 
@@ -35,15 +35,14 @@ async fn serve_ws(ws_broadcast: broadcast::Sender<Message>) {
         });
 
     println!("WebSocket server listening on ws://0.0.0.0:4000/ws");
-    warp::serve(ws_route)
-        .run(([0, 0, 0, 0], 4000))
-        .await;
+    warp::serve(ws_route).run(([0, 0, 0, 0], 4000)).await;
 }
 
 /// This helper filter makes a clone of the broadcast sender available to each connection.
 fn with_ws_sender(
     sender: broadcast::Sender<Message>,
-) -> impl Filter<Extract = (broadcast::Sender<Message>,), Error = std::convert::Infallible> + Clone {
+) -> impl Filter<Extract = (broadcast::Sender<Message>,), Error = std::convert::Infallible> + Clone
+{
     warp::any().map(move || sender.clone())
 }
 
@@ -86,9 +85,9 @@ async fn handle_connection(ws: WebSocket, ws_sender: broadcast::Sender<Message>)
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tokio::task::LocalSet;
     use std::sync::Arc;
     use tokio::sync::broadcast;
+    use tokio::task::LocalSet;
 
     let (ws_broadcast, _) = broadcast::channel(32);
     let ws_broadcast = Arc::new(ws_broadcast);
@@ -150,4 +149,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     Ok(())
 }
-
