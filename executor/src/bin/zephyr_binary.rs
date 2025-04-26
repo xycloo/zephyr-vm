@@ -212,6 +212,7 @@ async fn main() {
         }
     })
     .await;
+    
     let result = spawn.await;
     if let Ok(Ok(result)) = result {
         let _ = tokio::io::stdout().write_all(result.as_bytes()).await;
