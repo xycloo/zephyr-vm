@@ -1,6 +1,9 @@
 use rs_zephyr_common::{Account, ContractDataEntry};
 use rusqlite::{params, Connection};
-use soroban_env_host::xdr::{AccountEntryExt, AccountEntryExtensionV1, AccountEntryExtensionV1Ext, LedgerEntry, Limits, ReadXdr, ScAddress, ScVal, WriteXdr};
+use soroban_env_host::xdr::{
+    AccountEntryExt, AccountEntryExtensionV1, AccountEntryExtensionV1Ext, LedgerEntry, Limits,
+    ReadXdr, ScAddress, ScVal, WriteXdr,
+};
 use zephyr_vm::{db::ledger::LedgerStateRead, ZephyrStandard};
 
 #[derive(Clone)]

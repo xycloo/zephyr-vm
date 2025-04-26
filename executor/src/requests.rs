@@ -1,6 +1,9 @@
 use std::{str::FromStr, time::Duration};
 
-use reqwest::{header::{HeaderMap, HeaderName}, RequestBuilder, Response};
+use reqwest::{
+    header::{HeaderMap, HeaderName},
+    RequestBuilder, Response,
+};
 use rs_zephyr_common::http::{AgnosticRequest, Method};
 
 pub struct WebhookJob {

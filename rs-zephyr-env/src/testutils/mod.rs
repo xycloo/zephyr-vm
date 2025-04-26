@@ -96,7 +96,7 @@ impl TestVM {
         let invocation = tokio::runtime::Handle::current()
             .spawn_blocking(move || {
                 let mut host: Host<MercuryDatabase, LedgerReader> = Host::mocked().unwrap();
-                
+
                 host.set_stack_trace(true);
                 let vm = Vm::new(&host, &read_wasm(&wasm_path)).unwrap();
                 host.load_context(Rc::downgrade(&vm)).unwrap();

@@ -1,7 +1,10 @@
 use std::{collections::HashMap, env};
 
 use anyhow::{Context, Result};
-use postgres::{Client, NoTls, types::{ToSql, Type}};
+use postgres::{
+    types::{ToSql, Type},
+    Client, NoTls,
+};
 use rs_zephyr_common::{DatabaseError, ZephyrVal};
 use serde::{Deserialize, Serialize};
 use zephyr_vm::{
@@ -30,8 +33,7 @@ pub mod execution {
 
     /// Establishes an asynchronous connection using the environment variable `INGESTOR_DB`.
     async fn get_async_connection() -> Result<(tokio_postgres::Client)> {
-        let conn_str = env::var("INGESTOR_DB")
-            .context("INGESTOR_DB env var is not set")?;
+        let conn_str = env::var("INGESTOR_DB").context("INGESTOR_DB env var is not set")?;
         let (client, connection) =
             tokio_postgres::connect(&conn_str, tokio_postgres::NoTls).await?;
         tokio::spawn(async move {
@@ -66,47 +68,41 @@ pub mod execution {
 
     pub async fn new_zephyr_table(request: NewZephyrTable) -> Result<String> {
         let client = get_async_connection().await?;
-    
+
         let hash: [u8; 16] = {
             let sym = symbol::Symbol::try_from_bytes(request.table.unwrap().as_bytes()).unwrap();
             let bytes = i64_to_bytes(sym.0 as i64);
             md5::compute([bytes, i64_to_bytes(request.user_id.into())].concat()).into()
         };
-    
+
         let drop_table = format!("DROP TABLE IF EXISTS zephyr_{}", hex::encode(hash).as_str());
         client.execute(&drop_table, &[]).await.unwrap();
-    
+
         let mut new_table_stmt = String::from(&format!(
             "CREATE TABLE zephyr_{} (",
             hex::encode(hash).as_str()
         ));
-    
+
         let table_name = format!("zephyr_{}", hex::encode(hash).as_str());
-    
+
         if let Some(columns) = &request.columns {
             let mut primary_key_set = false;
             for (index, column) in columns.iter().enumerate() {
-                new_table_stmt.push_str(&format!(
-                    "{} {}",
-                    column.name,
-                    column.col_type
-                ));
-    
+                new_table_stmt.push_str(&format!("{} {}", column.name, column.col_type));
+
                 if column.primary == Some(true) && !primary_key_set {
                     new_table_stmt.push_str(" PRIMARY KEY");
                     primary_key_set = true;
                 }
-    
+
                 if index < columns.len() - 1 {
                     new_table_stmt.push_str(", ");
                 }
             }
         }
-    
+
         new_table_stmt.push(')');
-        client
-            .batch_execute(&new_table_stmt)
-            .await?;
+        client.batch_execute(&new_table_stmt).await?;
 
         if let Some(columns) = &request.columns {
             for column in columns.iter() {
@@ -120,33 +116,28 @@ pub mod execution {
                             table_name,
                             column.name
                         );
-                        client
-                            .execute(&index_stmt, &[])
-                            .await?;
+                        client.execute(&index_stmt, &[]).await?;
                     }
                 }
             }
         }
 
         let stmt2 = client
-            .prepare_typed(
-                &format!("grant select on {} to public", table_name),
-                &[],
-            )
+            .prepare_typed(&format!("grant select on {} to public", table_name), &[])
             .await
             .unwrap();
-    
+
         client.execute(&stmt2, &[]).await.unwrap();
-    
+
         let new_table_stmt = String::from(&format!(
             "CREATE TABLE IF NOT EXISTS zephyr_user_tables (
                 user_id INT,
                 name TEXT unique
             )",
         ));
-    
+
         client.execute(&new_table_stmt, &[]).await.unwrap();
-    
+
         let add_table_to_list_stmt = client
             .prepare_typed(
                 &format!("INSERT INTO zephyr_user_tables (user_id, name) VALUES ($1, $2)"),
@@ -154,14 +145,14 @@ pub mod execution {
             )
             .await
             .unwrap();
-    
+
         let _ = client
             .execute(
                 &add_table_to_list_stmt,
                 &[&(request.user_id as i64), &table_name],
             )
             .await;
-    
+
         Ok(table_name)
     }
 }
@@ -256,8 +247,7 @@ pub mod mercury_db {
     impl ZephyrMock for MercuryDatabase {
         fn mocked() -> Result<Self> {
             Ok(MercuryDatabase {
-                postgres_arg: env::var("INGESTOR_DB")
-                    .context("INGESTOR_DB env var is not set")?,
+                postgres_arg: env::var("INGESTOR_DB").context("INGESTOR_DB env var is not set")?,
             })
         }
     }
@@ -290,9 +280,11 @@ pub mod mercury_db {
             let table_name = format!("zephyr_{}", hex::encode(read_point_hash));
             let columns: Vec<String> = read_data
                 .iter()
-                .map(|&val| Symbol(val as u64)
-                    .to_string()
-                    .map_err(|_| DatabaseError::ZephyrQueryError))
+                .map(|&val| {
+                    Symbol(val as u64)
+                        .to_string()
+                        .map_err(|_| DatabaseError::ZephyrQueryError)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             let columns_string = columns.join(", ");
 
@@ -315,8 +307,13 @@ pub mod mercury_db {
                     let colname = Symbol(*col_val as u64)
                         .to_string()
                         .map_err(|_| DatabaseError::WriteError)?;
-                    query.push_str(&format!("{} {} ${}{}", colname, operator, idx + 1,
-                        if idx < conds.len() - 1 { " AND " } else { "" }));
+                    query.push_str(&format!(
+                        "{} {} ${}{}",
+                        colname,
+                        operator,
+                        idx + 1,
+                        if idx < conds.len() - 1 { " AND " } else { "" }
+                    ));
 
                     let col_type = types_map.get(&colname).ok_or(DatabaseError::WriteError)?;
                     let param_raw = &condition_args.as_ref().ok_or(DatabaseError::WriteError)?[idx];
@@ -346,7 +343,8 @@ pub mod mercury_db {
             let params: Vec<&(dyn ToSql + Sync)> =
                 owned_params.iter().map(|p| p.as_tosql()).collect();
 
-            let result = client.query(&stmt, &params)
+            let result = client
+                .query(&stmt, &params)
                 .map_err(|_| DatabaseError::ZephyrQueryError)?;
 
             // Process the returned rows into our TableRows structure.
@@ -355,21 +353,21 @@ pub mod mercury_db {
                 .map(|row| {
                     let row_wrapped = (0..row.len())
                         .map(|i| {
-                            let bytes: Vec<u8> = row.try_get(i)
-                                .unwrap_or_else(|_| {
-                                    let integer: i64 = row.try_get(i).unwrap();
-                                    bincode::serialize(&ZephyrVal::I64(integer)).unwrap()
-                                });
+                            let bytes: Vec<u8> = row.try_get(i).unwrap_or_else(|_| {
+                                let integer: i64 = row.try_get(i).unwrap();
+                                bincode::serialize(&ZephyrVal::I64(integer)).unwrap()
+                            });
                             TypeWrap(bytes)
                         })
                         .collect();
                     TableRow { row: row_wrapped }
                 })
                 .collect();
-            let table_rows = TableRows { rows: rows_serialized };
+            let table_rows = TableRows {
+                rows: rows_serialized,
+            };
 
-            Ok(bincode::serialize(&table_rows)
-                .map_err(|_| DatabaseError::ZephyrQueryError)?)
+            Ok(bincode::serialize(&table_rows).map_err(|_| DatabaseError::ZephyrQueryError)?)
         }
     }
 
@@ -409,8 +407,8 @@ pub mod mercury_db {
 
                 let col_type = types_map.get(&col).ok_or(DatabaseError::WriteError)?;
                 if col_type == "bigint" {
-                    let param_deser: ZephyrVal = bincode::deserialize(bytes)
-                        .map_err(|_| DatabaseError::WriteError)?;
+                    let param_deser: ZephyrVal =
+                        bincode::deserialize(bytes).map_err(|_| DatabaseError::WriteError)?;
                     let native = match param_deser {
                         ZephyrVal::I128(num) => num as i64,
                         ZephyrVal::I32(num) => num as i64,
@@ -437,11 +435,13 @@ pub mod mercury_db {
                     .join(", ")
             );
 
-            let stmt = client.prepare_typed(&query, &types)
+            let stmt = client
+                .prepare_typed(&query, &types)
                 .map_err(|_| DatabaseError::WriteError)?;
             let params: Vec<&(dyn ToSql + Sync)> =
                 owned_params.iter().map(|p| p.as_tosql()).collect();
-            client.execute(&stmt, &params)
+            client
+                .execute(&stmt, &params)
                 .map_err(|_| DatabaseError::WriteError)?;
             Ok(())
         }
@@ -472,8 +472,8 @@ pub mod mercury_db {
                     let bytes = &written[idx];
                     let col_type = types_map.get(&col).ok_or(DatabaseError::WriteError)?;
                     if col_type == "bigint" {
-                        let param_deser: ZephyrVal = bincode::deserialize(bytes)
-                            .map_err(|_| DatabaseError::WriteError)?;
+                        let param_deser: ZephyrVal =
+                            bincode::deserialize(bytes).map_err(|_| DatabaseError::WriteError)?;
                         let native = match param_deser {
                             ZephyrVal::I128(num) => num as i64,
                             ZephyrVal::I32(num) => num as i64,
@@ -504,7 +504,8 @@ pub mod mercury_db {
                     let colname = Symbol(*col_val as u64)
                         .to_string()
                         .map_err(|_| DatabaseError::WriteError)?;
-                    let clause = format!("{} {} ${}", colname, operator, write_data.len() + idx + 1);
+                    let clause =
+                        format!("{} {} ${}", colname, operator, write_data.len() + idx + 1);
                     let col_type = types_map.get(&colname).ok_or(DatabaseError::WriteError)?;
                     let param_raw = &condition_args[idx];
                     if col_type == "bigint" {
@@ -534,11 +535,13 @@ pub mod mercury_db {
                 set_clause.join(", "),
                 where_clause.join(" AND ")
             );
-            let stmt = client.prepare_typed(&query, &types)
+            let stmt = client
+                .prepare_typed(&query, &types)
                 .map_err(|_| DatabaseError::WriteError)?;
             let params: Vec<&(dyn ToSql + Sync)> =
                 owned_params.iter().map(|p| p.as_tosql()).collect();
-            client.execute(&stmt, &params)
+            client
+                .execute(&stmt, &params)
                 .map_err(|_| DatabaseError::WriteError)?;
             Ok(())
         }
@@ -584,8 +587,7 @@ pub mod mercury_db {
 impl ZephyrStandard for mercury_db::MercuryDatabase {
     fn zephyr_standard() -> Result<Self> {
         Ok(mercury_db::MercuryDatabase {
-            postgres_arg: env::var("INGESTOR_DB")
-                .context("INGESTOR_DB env var is not set")?,
+            postgres_arg: env::var("INGESTOR_DB").context("INGESTOR_DB env var is not set")?,
         })
     }
 }

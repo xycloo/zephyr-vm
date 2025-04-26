@@ -1,12 +1,16 @@
 use base64::prelude::*;
 use client::EventFeed;
 use executor::db::execution::NewZephyrTable;
-use sha2::{Digest, Sha256};
-use tokio::{fs, process::Command, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
-use tokio_tungstenite::connect_async;
 use futures::StreamExt;
-use url::Url;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::{
+    fs,
+    process::Command,
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+};
+use tokio_tungstenite::connect_async;
+use url::Url;
 
 mod client;
 
@@ -18,7 +22,7 @@ pub struct SyncRequest {
 #[derive(Deserialize, Serialize, Debug)]
 pub enum BinaryType {
     Path(String),
-    Code(Vec<u8>)
+    Code(Vec<u8>),
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -35,7 +39,7 @@ pub struct FInput {
     pub binary: BinaryType,
     pub user_id: u64,
     pub network_id: [u8; 32],
-    pub fname: String
+    pub fname: String,
 }
 
 async fn get_network_id_from_env() -> [u8; 32] {
@@ -54,7 +58,7 @@ async fn fill_metas(tx: UnboundedSender<Vec<u8>>) {
         .expect("Failed to connect to the server");
     println!("Connected to the server.");
     let (_, mut read) = ws_stream.split();
-    
+
     while let Some(message) = read.next().await {
         match message {
             Ok(msg) if msg.is_text() => {
@@ -97,9 +101,11 @@ async fn meta_executor(rx: &mut UnboundedReceiver<Vec<u8>>) {
             user_id: 0,
             network_id: get_network_id_from_env().await,
             fname: "on_close".into(),
-            binary: BinaryType::Path(std::env::var("WASM_PATH").expect("missing WASM_PATH from enviornment"))
+            binary: BinaryType::Path(
+                std::env::var("WASM_PATH").expect("missing WASM_PATH from enviornment"),
+            ),
         };
-        
+
         let _ = execute_function(function).await;
     }
 }
@@ -107,9 +113,11 @@ async fn meta_executor(rx: &mut UnboundedReceiver<Vec<u8>>) {
 async fn execute_function(function: FInput) -> anyhow::Result<()> {
     let serialized = bincode::serialize(&function).unwrap();
     let encoded = BASE64_STANDARD.encode(&serialized);
-    let child = Command::new(std::env::var("BINARY_PATH").expect("missing BINARY_PATH from enviornment"))
-        .arg(encoded.clone())
-        .spawn().unwrap();
+    let child =
+        Command::new(std::env::var("BINARY_PATH").expect("missing BINARY_PATH from enviornment"))
+            .arg(encoded.clone())
+            .spawn()
+            .unwrap();
 
     let output = child.wait_with_output().await?;
     if output.status.success() {
@@ -136,39 +144,61 @@ pub struct CatchupConfig {
 #[tokio::main]
 async fn main() {
     let server_action: String = std::env::args().nth(1).unwrap_or_default();
-    
+
     match server_action.as_str() {
         "catchup" => {
             println!("Starting catchup job, reading config.json");
-            let config: CatchupConfig = serde_json::from_str(&tokio::fs::read_to_string("catchup.json").await.expect("No catchup.json found.")).expect("Invalid config.json format.");
+            let config: CatchupConfig = serde_json::from_str(
+                &tokio::fs::read_to_string("catchup.json")
+                    .await
+                    .expect("No catchup.json found."),
+            )
+            .expect("Invalid config.json format.");
             println!("Retrieving events (using mercury plug)");
             let plug = client::mercury::MercuryClient {
                 network: config.network,
-                jwt: config.mercury_jwt
+                jwt: config.mercury_jwt,
             };
-            let events = plug.events(config.contracts, [config.topic1s, config.topic2s, config.topic3s, config.topic4s], config.start).await.expect("failed to retreive events");
-            let last_ledger_processed = client::do_catchups_on_events(events.data, config.start).await;
-            println!("Finished catchup, processed until ledger {}", last_ledger_processed);
-        },
+            let events = plug
+                .events(
+                    config.contracts,
+                    [
+                        config.topic1s,
+                        config.topic2s,
+                        config.topic3s,
+                        config.topic4s,
+                    ],
+                    config.start,
+                )
+                .await
+                .expect("failed to retreive events");
+            let last_ledger_processed =
+                client::do_catchups_on_events(events.data, config.start).await;
+            println!(
+                "Finished catchup, processed until ledger {}",
+                last_ledger_processed
+            );
+        }
         "newtable" => {
-            let tables: Vec<NewZephyrTable> = serde_json::from_str(&tokio::fs::read_to_string("tables.json").await.expect("No tables.json found.")).expect("Invalid tables.json format.");
+            let tables: Vec<NewZephyrTable> = serde_json::from_str(
+                &tokio::fs::read_to_string("tables.json")
+                    .await
+                    .expect("No tables.json found."),
+            )
+            .expect("Invalid tables.json format.");
             println!("Creating new tables");
-            
+
             for table in tables {
                 match executor::db::execution::new_zephyr_table(table).await {
                     Ok(name) => println!("Created table {name}"),
-                    Err(e) => println!("Failed to create zephyr table: {:?}", e)
+                    Err(e) => println!("Failed to create zephyr table: {:?}", e),
                 }
             }
         }
         _ => {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let fill_metas = tokio::spawn(async move {
-                fill_metas(tx).await
-            });
-            let spawn_executor = tokio::spawn(async move {
-                meta_executor(&mut rx).await
-            });
+            let fill_metas = tokio::spawn(async move { fill_metas(tx).await });
+            let spawn_executor = tokio::spawn(async move { meta_executor(&mut rx).await });
 
             let _ = tokio::join!(fill_metas, spawn_executor);
         }

@@ -154,4 +154,3 @@ query Test {{
 
     Request { query }
 }
-

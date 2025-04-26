@@ -7,7 +7,7 @@ pub mod query;
 
 pub struct MercuryClient {
     pub jwt: String,
-    pub network: String
+    pub network: String,
 }
 
 #[async_trait]
@@ -24,9 +24,10 @@ impl EventFeed for MercuryClient {
         let topic2s = topics.get(1).cloned().unwrap_or(vec![]);
         let topic3s = topics.get(2).cloned().unwrap_or(vec![]);
         let topic4s = topics.get(3).cloned().unwrap_or(vec![]);
-        
+
         let client = reqwest::Client::new();
-        let graphql_endpoint = if &self.network == "Public Global Stellar Network ; September 2015" {
+        let graphql_endpoint = if &self.network == "Public Global Stellar Network ; September 2015"
+        {
             "https://mainnet.mercurydata.app:2083/graphql"
         } else {
             "https://api.mercurydata.app:2083/graphql"

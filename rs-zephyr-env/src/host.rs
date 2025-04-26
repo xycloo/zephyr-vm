@@ -890,7 +890,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 wrapped,
             }
         };
-        
+
         let use_soroban_functions = true;
 
         let mut all_exports = if use_soroban_functions {
@@ -913,14 +913,14 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             conclude_fn,
             send_message_fn,
             db_read_as_id_fn,
-            read_account_from_ledger_fn,            
+            read_account_from_ledger_fn,
         ];
 
         all_exports.append(&mut arr);
         if use_soroban_functions {
             all_exports.append(&mut Self::soroban_adjusted(store));
         }
-        
+
         // we reverse because we let the linker error when adding the original soroban functions.
         // we should probably just trim the soroban host function generation and exclude the functions
         // we tamper with in `soroban_adjusted`.
@@ -994,7 +994,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
                 wrapped,
             }
         };
-        
+
         let valid_host_val_to_scval = {
             let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, val: i64| {
                 caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
@@ -1432,21 +1432,18 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         };
 
         let i128_from_pieces = {
-            let wrapped = Func::wrap(
-                &mut store,
-                |caller: Caller<Host<DB, L>>, obj: i64| {
-                    let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
-                    println!("\n\n\ncalled");
+            let wrapped = Func::wrap(&mut store, |caller: Caller<Host<DB, L>>, obj: i64| {
+                let host: soroban_env_host::Host = Host::<DB, L>::soroban_host(&caller);
+                println!("\n\n\ncalled");
 
-                    caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
-                        TracePoint::SorobanEnvironment,
-                        format!("I128 from pieces."),
-                        false,
-                    );
+                caller.data().0.stack_trace.borrow_mut().maybe_add_trace(
+                    TracePoint::SorobanEnvironment,
+                    format!("I128 from pieces."),
+                    false,
+                );
 
-                    0i64
-                },
-            );
+                0i64
+            });
 
             FunctionInfo {
                 module: "i",
@@ -1563,7 +1560,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
             soroban_simulate_tx_fn,
             bytes_copy_to_linear_memory_mem,
             map_new_from_linear_memory_mem,
-            i128_from_pieces
+            i128_from_pieces,
         ]
     }
 }
