@@ -6,6 +6,8 @@ use soroban_env_host::xdr::{
 };
 use zephyr_vm::{db::ledger::LedgerStateRead, ZephyrStandard};
 
+mod raw;
+
 #[derive(Clone)]
 pub struct LedgerReader {
     path: String,

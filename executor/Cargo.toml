@@ -19,6 +19,7 @@ rusqlite = "0.31.0"
 hex = {workspace=true}
 bincode = {workspace=true}
 reqwest = {workspace=true}
+stellar-strkey = {workspace=true}
 chrono = "0.4.39"
 md5 = "0.7.0"
 

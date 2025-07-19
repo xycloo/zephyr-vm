@@ -62,7 +62,7 @@ fn extract_json(raw_http: &str) -> Option<&str> {
     None
 }
 
-pub fn fetch_ledger_entries_raw(
+fn fetch_ledger_entries_raw(
     host_port: &str,
     keys_b64: &[&str],
 ) -> Result<GetLedgerEntryRawResponse, Box<dyn std::error::Error>> {
