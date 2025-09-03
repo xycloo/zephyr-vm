@@ -34,8 +34,8 @@ urlencoding = "2.1.3"
 rand = "0.8.5"
 
 #rs-zephyr-common = { version = "0.1.8" }
-rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
-#rs-zephyr-common = {git = "https://github.com/xycloo/rs-zephyr-toolkit/", branch="stellar-main-2"}
+#rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
+rs-zephyr-common = {git = "https://github.com/xycloo/rs-zephyr-toolkit/", branch="stellar-main-2"}
 
 tokio = { version = "1.0", features = ["full"] }
 log = "0.4.20"
@@ -47,11 +47,10 @@ ledger-meta-factory = { version = "0.1.4", path = "../ledger-meta-factory", opti
 
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
-path = "../../rs-soroban-env/soroban-simulation"
-#branch = "stellar-main-2"
+#path = "../../rs-soroban-env/soroban-simulation"
+git = "https://github.com/heytdep/rs-soroban-env"
+branch = "stellar-main-2"
 #version = "21.2.2"
-
-#git = "https://github.com/heytdep/rs-soroban-env"
 #rev = "4ab2b6c"
 
 [dependencies.stellar-xdr]
@@ -62,22 +61,19 @@ features = ["next", "curr", "serde", "base64"]
 
 [dependencies.soroban-env-host]
 package = "soroban-env-host-zephyr"
-path = "../../rs-soroban-env/soroban-env-host"
-
-#branch = "stellar-main-2"
+#path = "../../rs-soroban-env/soroban-env-host"
+git = "https://github.com/heytdep/rs-soroban-env"
+branch = "stellar-main-2"
 #version = "21.2.2"
-
-#git = "https://github.com/heytdep/rs-soroban-env"
 #rev = "4ab2b6c"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
-path = "../../rs-soroban-env/soroban-env-macros"
+#path = "../../rs-soroban-env/soroban-env-macros"
 
-#branch = "stellar-main-2"
-
-#git = "https://github.com/heytdep/rs-soroban-env"
+git = "https://github.com/heytdep/rs-soroban-env"
+branch = "stellar-main-2"
 #rev = "4ab2b6c"
 #version = "21.2.2"
 
