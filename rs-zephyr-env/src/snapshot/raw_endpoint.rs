@@ -39,6 +39,36 @@ pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32
     Ok(Some((entry.to_xdr(Limits::none()).unwrap(), ttl_entry)))
 }
 
+pub fn configurable_entry_and_ttl(
+    key: LedgerKey,
+    base_url: String,
+) -> anyhow::Result<Option<(Vec<u8>, Option<u32>)>> {
+    let entry = key.to_xdr_base64(Limits::none())?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(key.to_xdr(Limits::none()).unwrap());
+    let ttl = {
+        let hashed = hasher.finalize().as_slice().try_into().unwrap();
+        Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
+    };
+
+    let resp = fetch_ledger_entries_raw(base_url, &[&entry]).unwrap();
+    let entry =
+        LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
+
+    let ttl_entry = if let Some(entry) = resp.entries.get(1) {
+        let entry = LedgerEntry::from_xdr_base64(&entry.entry_b64, Limits::none()).unwrap();
+        let LedgerEntryData::Ttl(ttl) = entry.data else {
+            panic!()
+        };
+        Some(ttl.live_until_ledger_seq)
+    } else {
+        Some(u32::MAX) // todo fix
+    };
+
+    Ok(Some((entry.to_xdr(Limits::none()).unwrap(), ttl_entry)))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct GetLedgerEntryRawResponse {
     pub entries: Vec<LedgerEntryWrapper>,
