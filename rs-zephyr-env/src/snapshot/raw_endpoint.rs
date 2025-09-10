@@ -52,7 +52,7 @@ pub fn configurable_entry_and_ttl(
         Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
     };
 
-    let resp = fetch_ledger_entries_raw(base_url, &[&entry]).unwrap();
+    let resp = fetch_ledger_entries_raw(&base_url, &[&entry]).unwrap();
     let entry =
         LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
 
