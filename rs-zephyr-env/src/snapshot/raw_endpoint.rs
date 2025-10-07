@@ -22,7 +22,7 @@ pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32
 
     let base_url = "127.0.0.1:8085";
 
-    let resp = fetch_ledger_entries_raw(base_url, &[&entry]).unwrap();
+    let resp = fetch_ledger_entries_raw(base_url, &[&entry])?;
     let entry =
         LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
 
@@ -40,9 +40,10 @@ pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32
 }
 
 pub fn configurable_entry_and_ttl(
-    key: LedgerKey,
+    key: Vec<u8>,
     base_url: String,
 ) -> anyhow::Result<Option<(Vec<u8>, Option<u32>)>> {
+    let key = LedgerKey::from_xdr(key, Limits::none()).unwrap();
     let entry = key.to_xdr_base64(Limits::none())?;
 
     let mut hasher = Sha256::new();
@@ -52,7 +53,7 @@ pub fn configurable_entry_and_ttl(
         Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
     };
 
-    let resp = fetch_ledger_entries_raw(&base_url, &[&entry]).unwrap();
+    let resp = fetch_ledger_entries_raw(&base_url, &[&entry])?;
     let entry =
         LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
 
@@ -95,7 +96,7 @@ fn extract_json(raw_http: &str) -> Option<&str> {
 fn fetch_ledger_entries_raw(
     host_port: &str,
     keys_b64: &[&str],
-) -> Result<GetLedgerEntryRawResponse, Box<dyn std::error::Error>> {
+) -> anyhow::Result<GetLedgerEntryRawResponse> {
     assert!(!keys_b64.is_empty(), "must supply at least one key");
 
     let mut body = String::new();
@@ -129,9 +130,17 @@ fn fetch_ledger_entries_raw(
     stream.read_to_string(&mut raw_resp)?;
 
     let json = extract_json(&raw_resp)
-        .ok_or("failed to locate JSON body (no header/body delimiter)")?
+        .ok_or(anyhow::anyhow!("failed to locate JSON body (no header/body delimiter)"))?
         .to_string();
-    Ok(serde_json::from_str(&json)?)
+
+    let resp: GetLedgerEntryRawResponse = if let Ok(data) = serde_json::from_str(&json) {
+        data
+    } else {
+        tracing::error!("response doesn't contain entries field, likely the entry doesn't exist, requested entries are {:?}", keys_b64);
+        return Err(anyhow::anyhow!("invalid json response").into());
+    };
+
+    Ok(resp)
 }
 
 /// Snapshot that communicates with core's raw entry endpoint.
