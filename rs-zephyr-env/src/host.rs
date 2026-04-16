@@ -23,7 +23,7 @@ use anyhow::Result;
 use memory::CustomVMCtx;
 use rs_zephyr_common::{wrapping::WrappedMaxBytes, ZephyrStatus};
 use soroban_env_host::budget::AsBudget;
-use soroban_env_host::xdr::{Hash, Limits, ReadXdr, ScAddress, ScVal};
+use soroban_env_host::xdr::{ContractId, Hash, Limits, ReadXdr, ScAddress, ScVal};
 use soroban_env_host::{wasmi as soroban_wasmi, BytesObject, Env, I128Object, VecObject, VmCaller};
 use soroban_env_host::{CheckedEnvArg, MapObject, Symbol, Val};
 use std::{
@@ -167,7 +167,7 @@ impl<DB: ZephyrDatabase + ZephyrStandard, L: LedgerStateRead + ZephyrStandard> H
 
         let test_contract = Rc::new(ZephyrTestContract::new());
         let contract_id_bytes = [0; 32];
-        let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
+        let contract_address = ScAddress::Contract(ContractId(Hash(contract_id_bytes)));
         let contract_id = host.add_host_object(contract_address)?;
 
         // Since Soroban's Host relies on a contract to give context to the execution actions
@@ -203,7 +203,7 @@ impl<DB: ZephyrDatabase + ZephyrMock, L: LedgerStateRead + ZephyrMock> ZephyrMoc
         })?;
         let test_contract = Rc::new(ZephyrTestContract {});
         let contract_id_bytes = [0; 32];
-        let contract_address = ScAddress::Contract(Hash(contract_id_bytes));
+        let contract_address = ScAddress::Contract(ContractId(Hash(contract_id_bytes)));
         let contract_id = host.add_host_object(contract_address)?;
 
         // Since Soroban's Host relies on a contract to give context to the execution actions

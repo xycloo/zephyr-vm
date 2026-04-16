@@ -39,6 +39,14 @@ pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32
     Ok(Some((entry.to_xdr(Limits::none()).unwrap(), ttl_entry)))
 }
 
+#[test]
+fn test_entry() {
+    let key = LedgerKey::from_xdr_base64("AAAABgAAAAEW9Ze+ONLuolxPei68E6CdvjqCy0KvFiI77RghqZcOowAAABAAAAABAAAAAgAAAA8AAAAURmVlUGVyU2hhcmVVbml2ZXJzYWwAAAAEAAAAWwAAAAE=", Limits::none()).unwrap();
+    println!("{:?}", key);
+    let resp = entry_and_ttl(key.to_xdr(Limits::none()).unwrap());
+    println!("{:?}", resp);
+}
+
 pub fn configurable_entry_and_ttl(
     key: Vec<u8>,
     base_url: String,
@@ -128,6 +136,8 @@ fn fetch_ledger_entries_raw(
 
     let mut raw_resp = String::new();
     stream.read_to_string(&mut raw_resp)?;
+
+    println!("{raw_resp}");
 
     let json = extract_json(&raw_resp)
         .ok_or(anyhow::anyhow!("failed to locate JSON body (no header/body delimiter)"))?

@@ -24,7 +24,7 @@ stellar-strkey = "0.0.8"
 executor = {path="./executor"}
 
 [workspace.dependencies.stellar-xdr]
-version = "=22.1.0"
+version = "=26.0.0"
 features=["next", "curr", "serde", "base64"]
 
 

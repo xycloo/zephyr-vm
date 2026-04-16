@@ -34,8 +34,8 @@ urlencoding = "2.1.3"
 rand = "0.8.5"
 
 #rs-zephyr-common = { version = "0.1.8" }
-#rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
-rs-zephyr-common = {git = "https://github.com/xycloo/rs-zephyr-toolkit/", branch="stellar-main-2"}
+rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
+#rs-zephyr-common = {git = "https://github.com/xycloo/rs-zephyr-toolkit/", branch="stellar-main-2"}
 
 tracing = "0.1.41"
 tokio = { version = "1.0", features = ["full"] }
@@ -48,40 +48,33 @@ ledger-meta-factory = { version = "0.1.4", path = "../ledger-meta-factory", opti
 
 [dependencies.soroban-simulation]
 package = "soroban-simulation-zephyr"
-#path = "../../rs-soroban-env/soroban-simulation"
-git = "https://github.com/heytdep/rs-soroban-env"
-branch = "stellar-main-2"
+path = "../../rs-soroban-env/soroban-simulation"
+#git = "https://github.com/heytdep/rs-soroban-env"
+#branch = "stellar-main-2"
 #version = "21.2.2"
 #rev = "4ab2b6c"
 
 [dependencies.stellar-xdr]
-version = "=22.1.0"
+version = "=26.0.0"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
 features = ["next", "curr", "serde", "base64"]
 
-[dependencies.stellar-xdr-new]
-package = "stellar-xdr"
-version = "=23.0.0"
-#git = "https://github.com/stellar/rs-stellar-xdr"
-#rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
-features = ["next", "curr", "serde", "base64"]
 
 [dependencies.soroban-env-host]
 package = "soroban-env-host-zephyr"
-#path = "../../rs-soroban-env/soroban-env-host"
-git = "https://github.com/heytdep/rs-soroban-env"
-branch = "stellar-main-2"
+path = "../../rs-soroban-env/soroban-env-host"
+#git = "https://github.com/heytdep/rs-soroban-env"
+#branch = "stellar-main-2"
 #version = "21.2.2"
 #rev = "4ab2b6c"
 features = ["testutils", "next"]
 
 [dependencies.soroban-env-macros]
 package = "soroban-env-macros-zephyr"
-#path = "../../rs-soroban-env/soroban-env-macros"
-
-git = "https://github.com/heytdep/rs-soroban-env"
-branch = "stellar-main-2"
+path = "../../rs-soroban-env/soroban-env-macros"
+#git = "https://github.com/heytdep/rs-soroban-env"
+#branch = "stellar-main-2"
 #rev = "4ab2b6c"
 #version = "21.2.2"
 

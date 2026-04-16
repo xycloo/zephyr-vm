@@ -1,6 +1,6 @@
 use ledger::sample_ledger;
 use stellar_xdr::next::{
-    ContractEvent, ContractEventV0, ExtensionPoint, GeneralizedTransactionSet, Hash,
+    ContractEvent, ContractEventV0, ContractId, ExtensionPoint, GeneralizedTransactionSet, Hash,
     InvokeContractArgs, InvokeHostFunctionOp, LedgerCloseMeta, LedgerEntryChanges, Limits,
     Operation, OperationMeta, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
     SorobanTransactionMeta, TimePoint, Transaction, TransactionEnvelope, TransactionMeta,
@@ -29,11 +29,11 @@ impl TransitionPretty {
         topics: Vec<ScVal>,
         data: ScVal,
     ) -> anyhow::Result<ContractEvent> {
-        let hash = Hash(stellar_strkey::Contract::from_string(&contract.to_string())?.0);
+        let contract_id = ContractId(Hash(stellar_strkey::Contract::from_string(&contract.to_string())?.0));
 
         let event = ContractEvent {
             ext: ExtensionPoint::V0,
-            contract_id: Some(hash),
+            contract_id: Some(contract_id),
             type_: stellar_xdr::next::ContractEventType::Contract,
             body: stellar_xdr::next::ContractEventBody::V0(ContractEventV0 {
                 topics: topics.try_into().unwrap(),
@@ -80,6 +80,11 @@ impl Transition {
                 v0.ledger_header.header.ledger_seq = new_sequence as u32;
                 self.meta = LedgerCloseMeta::V0(v0)
             }
+
+            LedgerCloseMeta::V2(mut v2) => {
+                v2.ledger_header.header.ledger_seq = new_sequence as u32;
+                self.meta = LedgerCloseMeta::V2(v2)
+            }
         }
     }
 
@@ -93,6 +98,11 @@ impl Transition {
             LedgerCloseMeta::V0(mut v0) => {
                 v0.ledger_header.header.scp_value.close_time = TimePoint(new_close_time as u64);
                 self.meta = LedgerCloseMeta::V0(v0)
+            }
+
+            LedgerCloseMeta::V2(mut v2) => {
+                v2.ledger_header.header.scp_value.close_time = TimePoint(new_close_time as u64);
+                self.meta = LedgerCloseMeta::V2(v2)
             }
         }
     }
@@ -130,7 +140,7 @@ impl Transition {
         self.processing_append(txmeta);
     }
 
-    pub fn add_sample_soroban_envelope(&mut self, contract_id: Hash) {
+    pub fn add_sample_soroban_envelope(&mut self, contract_id: ContractId) {
         let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
             tx: Transaction {
                 source_account: stellar_xdr::next::MuxedAccount::Ed25519(Uint256([0; 32])),
@@ -204,6 +214,8 @@ impl Transition {
                 v0.tx_set.txs = txs.try_into().unwrap();
                 self.meta = LedgerCloseMeta::V0(v0)
             }
+
+            LedgerCloseMeta::V2(_) => unimplemented!("V2 not supported by ledger-meta-factory"),
         }
     }
 
@@ -224,6 +236,8 @@ impl Transition {
 
                 self.meta = LedgerCloseMeta::V0(v0)
             }
+
+            LedgerCloseMeta::V2(_) => unimplemented!("V2 not supported by ledger-meta-factory"),
         }
     }
 }
