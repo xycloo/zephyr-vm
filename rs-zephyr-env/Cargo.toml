@@ -55,10 +55,10 @@ path = "../../rs-soroban-env/soroban-simulation"
 #rev = "4ab2b6c"
 
 [dependencies.stellar-xdr]
-version = "=26.0.0"
+version = "=27.0.0"
 #git = "https://github.com/stellar/rs-stellar-xdr"
 #rev = "44b7e2d4cdf27a3611663e82828de56c5274cba0"
-features = ["next", "curr", "serde", "base64"]
+features = ["serde", "base64"]
 
 
 [dependencies.soroban-env-host]

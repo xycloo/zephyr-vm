@@ -6,7 +6,7 @@ use soroban_simulation::SnapshotSourceWithArchive;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::rc::Rc;
-use stellar_xdr::next::{Hash, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, WriteXdr};
+use stellar_xdr::{Hash, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, WriteXdr};
 
 /// gets the entry and ttl from core.
 pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32>)>> {
@@ -192,7 +192,7 @@ impl SnapshotSource for DynamicSnapshotFromRaw {
 mod test {
     use super::entry_and_ttl;
     use sha2::Digest;
-    use stellar_xdr::next::{
+    use stellar_xdr::{
         AccountId, Hash, LedgerEntry, LedgerKey, LedgerKeyAccount, LedgerKeyTtl, Limits, PublicKey,
         ReadXdr, Uint256, WriteXdr,
     };

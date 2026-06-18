@@ -1,5 +1,5 @@
 use ledger::sample_ledger;
-use stellar_xdr::next::{
+use stellar_xdr::{
     ContractEvent, ContractEventV0, ContractId, ExtensionPoint, GeneralizedTransactionSet, Hash,
     InvokeContractArgs, InvokeHostFunctionOp, LedgerCloseMeta, LedgerEntryChanges, Limits,
     Operation, OperationMeta, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
@@ -34,8 +34,8 @@ impl TransitionPretty {
         let event = ContractEvent {
             ext: ExtensionPoint::V0,
             contract_id: Some(contract_id),
-            type_: stellar_xdr::next::ContractEventType::Contract,
-            body: stellar_xdr::next::ContractEventBody::V0(ContractEventV0 {
+            type_: stellar_xdr::ContractEventType::Contract,
+            body: stellar_xdr::ContractEventBody::V0(ContractEventV0 {
                 topics: topics.try_into().unwrap(),
                 data,
             }),
@@ -130,7 +130,7 @@ impl Transition {
                 .try_into()
                 .unwrap(),
                 soroban_meta: Some(SorobanTransactionMeta {
-                    ext: stellar_xdr::next::SorobanTransactionMetaExt::V0,
+                    ext: stellar_xdr::SorobanTransactionMetaExt::V0,
                     return_value: ScVal::Void,
                     diagnostic_events: vec![].try_into().unwrap(),
                     events: vec![event].try_into().unwrap(),
@@ -143,17 +143,17 @@ impl Transition {
     pub fn add_sample_soroban_envelope(&mut self, contract_id: ContractId) {
         let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
             tx: Transaction {
-                source_account: stellar_xdr::next::MuxedAccount::Ed25519(Uint256([0; 32])),
+                source_account: stellar_xdr::MuxedAccount::Ed25519(Uint256([0; 32])),
                 fee: 10000,
                 seq_num: SequenceNumber(1),
-                cond: stellar_xdr::next::Preconditions::None,
-                memo: stellar_xdr::next::Memo::None,
+                cond: stellar_xdr::Preconditions::None,
+                memo: stellar_xdr::Memo::None,
                 operations: vec![Operation {
                     source_account: None,
-                    body: stellar_xdr::next::OperationBody::InvokeHostFunction(
+                    body: stellar_xdr::OperationBody::InvokeHostFunction(
                         InvokeHostFunctionOp {
                             auth: vec![].try_into().unwrap(),
-                            host_function: stellar_xdr::next::HostFunction::InvokeContract(
+                            host_function: stellar_xdr::HostFunction::InvokeContract(
                                 InvokeContractArgs {
                                     contract_address: ScAddress::Contract(contract_id),
                                     function_name: ScSymbol("metafactory".try_into().unwrap()),
@@ -165,7 +165,7 @@ impl Transition {
                 }]
                 .try_into()
                 .unwrap(),
-                ext: stellar_xdr::next::TransactionExt::V0,
+                ext: stellar_xdr::TransactionExt::V0,
             },
             signatures: vec![].try_into().unwrap(),
         });
@@ -244,12 +244,12 @@ impl Transition {
 
 #[cfg(test)]
 mod tests {
-    use stellar_xdr::next::{ContractEvent, Int128Parts, LedgerCloseMeta, Limits, ScSymbol, ScVal};
+    use stellar_xdr::{ContractEvent, Int128Parts, LedgerCloseMeta, Limits, ScSymbol, ScVal};
     use zephyr_sdk::MetaReader;
 
     use crate::TransitionPretty;
 
-    fn to_sdk_xdr_lib<F: stellar_xdr::next::WriteXdr, T: soroban_sdk::xdr::ReadXdr>(xdr: F) -> T {
+    fn to_sdk_xdr_lib<F: stellar_xdr::WriteXdr, T: soroban_sdk::xdr::ReadXdr>(xdr: F) -> T {
         T::from_xdr(
             xdr.to_xdr(Limits::none()).unwrap(),
             soroban_sdk::xdr::Limits::none(),
