@@ -6,37 +6,13 @@ use soroban_simulation::SnapshotSourceWithArchive;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::rc::Rc;
-use stellar_xdr::{Hash, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, WriteXdr};
+use stellar_xdr::{
+    Hash, LedgerEntry, LedgerEntryData, LedgerKey, LedgerKeyTtl, Limits, ReadXdr, WriteXdr,
+};
 
 /// gets the entry and ttl from core.
 pub fn entry_and_ttl(key: Vec<u8>) -> anyhow::Result<Option<(Vec<u8>, Option<u32>)>> {
-    let key = LedgerKey::from_xdr(key, Limits::none()).unwrap();
-    let entry = key.to_xdr_base64(Limits::none())?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(key.to_xdr(Limits::none()).unwrap());
-    let ttl = {
-        let hashed = hasher.finalize().as_slice().try_into().unwrap();
-        Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
-    };
-
-    let base_url = "127.0.0.1:8085";
-
-    let resp = fetch_ledger_entries_raw(base_url, &[&entry])?;
-    let entry =
-        LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
-
-    let ttl_entry = if let Some(entry) = resp.entries.get(1) {
-        let entry = LedgerEntry::from_xdr_base64(&entry.entry_b64, Limits::none()).unwrap();
-        let LedgerEntryData::Ttl(ttl) = entry.data else {
-            panic!()
-        };
-        Some(ttl.live_until_ledger_seq)
-    } else {
-        Some(u32::MAX) // todo fix
-    };
-
-    Ok(Some((entry.to_xdr(Limits::none()).unwrap(), ttl_entry)))
+    configurable_entry_and_ttl(key, "127.0.0.1:8085".to_string())
 }
 
 #[test]
@@ -52,27 +28,49 @@ pub fn configurable_entry_and_ttl(
     base_url: String,
 ) -> anyhow::Result<Option<(Vec<u8>, Option<u32>)>> {
     let key = LedgerKey::from_xdr(key, Limits::none()).unwrap();
-    let entry = key.to_xdr_base64(Limits::none())?;
+    let entry_key = key.to_xdr_base64(Limits::none())?;
 
-    let mut hasher = Sha256::new();
-    hasher.update(key.to_xdr(Limits::none()).unwrap());
-    let ttl = {
+    // NB: only soroban entries have ttl entries. classic entries must carry no
+    // live_until, the p28 host rejects classic entries paired with a ttl.
+    let is_soroban = matches!(
+        key,
+        LedgerKey::ContractData(_) | LedgerKey::ContractCode(_)
+    );
+
+    let resp = if is_soroban {
+        let mut hasher = Sha256::new();
+        hasher.update(key.to_xdr(Limits::none()).unwrap());
         let hashed = hasher.finalize().as_slice().try_into().unwrap();
-        Hash(hashed).to_xdr_base64(Limits::none()).unwrap()
+        let ttl_key = LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: Hash(hashed),
+        })
+        .to_xdr_base64(Limits::none())?;
+        fetch_ledger_entries_raw(&base_url, &[&entry_key, &ttl_key])?
+    } else {
+        fetch_ledger_entries_raw(&base_url, &[&entry_key])?
     };
 
-    let resp = fetch_ledger_entries_raw(&base_url, &[&entry])?;
-    let entry =
-        LedgerEntry::from_xdr_base64(resp.entries[0].entry_b64.clone(), Limits::none()).unwrap();
+    // NB: core returns only the found entries, ordered by entry type (ttl
+    // last), so classify by decoded type instead of position.
+    let mut entry = None;
+    let mut live_until = None;
+    for wrapper in &resp.entries {
+        let decoded = LedgerEntry::from_xdr_base64(&wrapper.entry_b64, Limits::none()).unwrap();
+        if let LedgerEntryData::Ttl(ttl) = &decoded.data {
+            live_until = Some(ttl.live_until_ledger_seq);
+        } else {
+            entry = Some(decoded);
+        }
+    }
 
-    let ttl_entry = if let Some(entry) = resp.entries.get(1) {
-        let entry = LedgerEntry::from_xdr_base64(&entry.entry_b64, Limits::none()).unwrap();
-        let LedgerEntryData::Ttl(ttl) = entry.data else {
-            panic!()
-        };
-        Some(ttl.live_until_ledger_seq)
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
+    let ttl_entry = if is_soroban {
+        // NB: fall back to max liveness if core did not return the ttl entry.
+        Some(live_until.unwrap_or(u32::MAX))
     } else {
-        Some(u32::MAX) // todo fix
+        None
     };
 
     Ok(Some((entry.to_xdr(Limits::none()).unwrap(), ttl_entry)))
