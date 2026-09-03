@@ -12,7 +12,9 @@ use soroban_env_host::xdr::{
 };
 use soroban_env_host::HostError;
 use soroban_simulation::SnapshotSourceWithArchive;
-use stellar_xdr::next::Uint256;
+use stellar_xdr::Uint256;
+
+pub mod raw_endpoint;
 
 pub struct DynamicSnapshot {}
 

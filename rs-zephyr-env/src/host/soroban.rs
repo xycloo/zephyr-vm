@@ -9,8 +9,8 @@ use anyhow::Result;
 use soroban_env_host::{
     budget::AsBudget,
     xdr::{
-        AccountId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr, ScAddress,
-        ScVal, Uint256, WriteXdr,
+        AccountId, ContractId, Hash, HostFunction, LedgerEntryData, Limits, PublicKey, ReadXdr,
+        ScAddress, ScVal, Uint256, WriteXdr,
     },
     Env, LedgerInfo, Symbol, TryFromVal, Val,
 };
@@ -32,7 +32,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     ) -> (Caller<Self>, Result<(i64, i64)>) {
         let host = caller.data();
 
-        let contract = ScAddress::Contract(Hash(contract));
+        let contract = ScAddress::Contract(ContractId(Hash(contract)));
         let read = {
             let ledger = &host.0.ledger.0.ledger;
             bincode::serialize(
@@ -102,7 +102,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
     ) -> (Caller<Self>, Result<(i64, i64)>) {
         let host = caller.data();
 
-        let contract = ScAddress::Contract(Hash(contract));
+        let contract = ScAddress::Contract(ContractId(Hash(contract)));
         let read = {
             let ledger = &host.0.ledger.0.ledger;
             bincode::serialize(&ledger.read_contract_data_entries_by_contract_id(contract)).unwrap()
@@ -285,7 +285,7 @@ impl<DB: ZephyrDatabase + Clone + 'static, L: LedgerStateRead + 'static> Host<DB
         let host = caller.data();
 
         let (soroban, val) = {
-            let contract = ScAddress::Contract(Hash(contract));
+            let contract = ScAddress::Contract(ContractId(Hash(contract)));
             let ledger = &host.0.ledger.0.ledger;
 
             let data = ledger.read_contract_data_entries_by_contract_id(contract);

@@ -1,0 +1,10 @@
+[{
+    "user_id": 0,
+    "table": "curr_seq",
+    "columns": [
+        {
+            "name": "current",
+            "col_type": "BYTEA"
+        }
+    ]
+}]

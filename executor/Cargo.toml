@@ -1,0 +1,29 @@
+[package]
+name = "executor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zephyr-vm = {workspace=true}
+rs-zephyr-common = {path="../../rs-zephyr-sdk/zephyr-common"}
+base64 = "0.22.1"
+multiuser-logging-service = { path = "../../multiuser-logging-service", default-features = false, features = [
+    "sdk", "storage"
+] }
+tokio = {workspace=true}
+serde = {workspace=true}
+anyhow = {workspace=true}
+tokio-postgres = "0.7.10"
+postgres = { version = "0.19.7", features = ["with-serde_json-1"] }
+rusqlite = "0.31.0"
+hex = {workspace=true}
+bincode = {workspace=true}
+reqwest = {workspace=true}
+stellar-strkey = {workspace=true}
+chrono = "0.4.39"
+md5 = "0.7.0"
+
+[dependencies.soroban-env-host]
+package = "soroban-env-host-zephyr"
+path = "../../rs-soroban-env/soroban-env-host"
+features = ["testutils", "next"]
