@@ -135,8 +135,6 @@ fn fetch_ledger_entries_raw(
     let mut raw_resp = String::new();
     stream.read_to_string(&mut raw_resp)?;
 
-    println!("{raw_resp}");
-
     let json = extract_json(&raw_resp)
         .ok_or(anyhow::anyhow!("failed to locate JSON body (no header/body delimiter)"))?
         .to_string();
