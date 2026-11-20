@@ -78,6 +78,10 @@ pub fn configurable_entry_and_ttl(
 
 #[derive(Debug, Deserialize)]
 pub struct GetLedgerEntryRawResponse {
+    // NB: core omits `entries` entirely when nothing matched, e.g.
+    // `{"ledgerSeq":65564532}`. that is "no such entry", a normal answer, not a
+    // malformed response, so default it rather than failing to deserialize.
+    #[serde(default)]
     pub entries: Vec<LedgerEntryWrapper>,
     #[serde(rename = "ledgerSeq")]
     pub ledger_seq: u32,
@@ -87,6 +91,26 @@ pub struct GetLedgerEntryRawResponse {
 pub struct LedgerEntryWrapper {
     #[serde(rename = "entry")]
     pub entry_b64: String,
+}
+
+#[test]
+fn absent_entries_field_is_no_such_entry() {
+    // NB: core's actual response when no key matched, measured on mainnet and
+    // testnet 2026-11-19. must deserialize to an empty list, not fail.
+    let resp: GetLedgerEntryRawResponse =
+        serde_json::from_str(r#"{"ledgerSeq":65564532}"#).unwrap();
+    assert!(resp.entries.is_empty());
+    assert_eq!(resp.ledger_seq, 65564532);
+}
+
+#[test]
+fn present_entries_field_still_parses() {
+    let resp: GetLedgerEntryRawResponse =
+        serde_json::from_str(r#"{"entries":[{"entry":"AAAA"}],"ledgerSeq":7}"#)
+            .unwrap();
+    assert_eq!(resp.entries.len(), 1);
+    assert_eq!(resp.entries[0].entry_b64, "AAAA");
+    assert_eq!(resp.ledger_seq, 7);
 }
 
 fn extract_json(raw_http: &str) -> Option<&str> {
@@ -139,11 +163,19 @@ fn fetch_ledger_entries_raw(
         .ok_or(anyhow::anyhow!("failed to locate JSON body (no header/body delimiter)"))?
         .to_string();
 
-    let resp: GetLedgerEntryRawResponse = if let Ok(data) = serde_json::from_str(&json) {
-        data
-    } else {
-        tracing::error!("response doesn't contain entries field, likely the entry doesn't exist, requested entries are {:?}", keys_b64);
-        return Err(anyhow::anyhow!("invalid json response").into());
+    // NB: with `entries` defaulted, this only fires on a genuinely malformed
+    // body. do not claim a cause here and do not log the keys: they are large
+    // base64 and the old message asserted "entry doesn't exist" on what is
+    // really a deserialization failure.
+    let resp: GetLedgerEntryRawResponse = match serde_json::from_str(&json) {
+        Ok(data) => data,
+        Err(e) => {
+            tracing::warn!(
+                "malformed getledgerentryraw response ({} keys): {e}",
+                keys_b64.len()
+            );
+            return Err(anyhow::anyhow!("invalid json response").into());
+        }
     };
 
     Ok(resp)
